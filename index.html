@@ -114,6 +114,10 @@
   .slotrow .info{flex:1;min-width:0}
   .slotrow .snm{font-weight:600;font-size:13px}
   .slotrow .smeta{font-size:11px;color:var(--mut)}
+  .modalback{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:50}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;max-width:360px;width:calc(100% - 40px);box-shadow:0 10px 40px rgba(0,0,0,.3)}
+  .modal p{margin:0 0 12px}
+  .modal textarea{width:100%;height:180px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink);font-family:var(--mono);font-size:11.5px;padding:8px;margin-bottom:10px}
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:var(--ink);color:var(--bg);padding:7px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
   .toast.show{opacity:1}
   .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:5px;border:1px solid rgba(0,0,0,.2)}
@@ -1344,12 +1348,46 @@ function bomText(pipes,fits,joints,total){
 
 /* ================= toolbar ================= */
 function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1800);}
+/* native confirm()/prompt() are blocked inside the sandboxed artifact iframe
+   (they silently return false), so use an in-page dialog instead */
+function confirmUI(msg){
+  return new Promise(res=>{
+    const back=document.createElement("div");back.className="modalback";
+    back.innerHTML=`<div class="modal"><p>${msg}</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" data-x="0">Cancel</button>
+      <button class="btn primary" data-x="1">OK</button></div></div>`;
+    const done=v=>{back.remove();document.removeEventListener("keydown",onKey);res(v);};
+    const onKey=e=>{if(e.key==="Escape")done(false);if(e.key==="Enter")done(true);};
+    back.addEventListener("click",e=>{
+      e.stopPropagation();
+      if(e.target===back){done(false);return;}
+      const b=e.target.closest("button");
+      if(b)done(b.dataset.x==="1");
+    });
+    document.addEventListener("keydown",onKey);
+    document.body.appendChild(back);
+    back.querySelector(".primary").focus();
+  });
+}
+function showTextModal(msg,text){
+  const back=document.createElement("div");back.className="modalback";
+  back.innerHTML=`<div class="modal"><p>${msg}</p><textarea readonly></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn primary">Close</button></div></div>`;
+  back.querySelector("textarea").value=text;
+  back.addEventListener("click",e=>{
+    e.stopPropagation();
+    if(e.target===back||e.target.closest("button.primary"))back.remove();
+  });
+  document.body.appendChild(back);
+  const ta=back.querySelector("textarea");ta.focus();ta.select();
+}
 $("undo").addEventListener("click",()=>{
   if(!undoStack.length){toast("Nothing to undo");return;}
   root=build(undoStack.pop());selPort=null;selNode=null;refresh();
 });
-$("clear").addEventListener("click",()=>{
-  if(root&&!confirm("Clear the whole assembly?"))return;
+$("clear").addEventListener("click",async()=>{
+  if(root&&!(await confirmUI("Clear the whole assembly? (Undo can bring it back)")))return;
   pushUndo();root=null;selPort=null;selNode=null;refresh();fitView();
 });
 /* ---- save files (three slots, like emulator save states) ---- */
@@ -1380,9 +1418,9 @@ function renderSlots(){
       :"Empty";
     row.innerHTML=`<div class="info"><div class="snm">File ${i}</div><div class="smeta">${meta}</div></div>`;
     const bSave=document.createElement("button");bSave.className="mini add";bSave.textContent="Save";
-    bSave.addEventListener("click",()=>{
+    bSave.addEventListener("click",async()=>{
       if(!root){toast("Nothing to save yet — build something first");return;}
-      if(s&&!confirm(`Overwrite File ${i}?`))return;
+      if(s&&!(await confirmUI(`Overwrite File ${i}?`)))return;
       localStorage.setItem(slotKey(i),JSON.stringify({t:serialize(root),ts:Date.now(),parts:countParts(),total:window._bomTotal??null}));
       toast(`Saved to File ${i}`);renderSlots();
     });
@@ -1396,10 +1434,10 @@ function renderSlots(){
     });
     row.appendChild(bLoad);
     const bDel=document.createElement("button");bDel.className="mini";bDel.textContent="Erase";
-    bDel.addEventListener("click",()=>{
+    bDel.addEventListener("click",async()=>{
       if(!s)return;
-      if(!confirm(`Erase File ${i}? This cannot be undone.`))return;
-      localStorage.removeItem(slotKey(i));renderSlots();
+      if(!(await confirmUI(`Erase File ${i}? This cannot be undone.`)))return;
+      localStorage.removeItem(slotKey(i));renderSlots();toast(`File ${i} erased`);
     });
     row.appendChild(bDel);
     pop.appendChild(row);
@@ -1420,7 +1458,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeFiles();});
 $("copy").addEventListener("click",async()=>{
   if(!window._bomText){toast("Nothing to copy yet");return;}
   try{await navigator.clipboard.writeText(window._bomText);toast("Shopping list copied — paste it anywhere");}
-  catch(e){prompt("Copy your list:",window._bomText);}
+  catch(e){showTextModal("Copying was blocked by the browser — select the text below and copy it yourself:",window._bomText);}
 });
 
 /* ================= examples ================= */
