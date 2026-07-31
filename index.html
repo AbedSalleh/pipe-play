@@ -104,6 +104,13 @@
   .total span{font-family:var(--mono)}
   .disclaimer{font-size:11px;color:var(--mut);margin-top:8px}
   .jsum{font-size:12px;color:var(--mut);margin:8px 0}
+  .filewrap{position:relative}
+  .filespop{position:absolute;right:0;top:calc(100% + 6px);width:310px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:6px 10px;z-index:20}
+  .slotrow{display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid var(--line)}
+  .slotrow:last-child{border-bottom:none}
+  .slotrow .info{flex:1;min-width:0}
+  .slotrow .snm{font-weight:600;font-size:13px}
+  .slotrow .smeta{font-size:11px;color:var(--mut)}
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:var(--ink);color:var(--bg);padding:7px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
   .toast.show{opacity:1}
   .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:5px;border:1px solid rgba(0,0,0,.2)}
@@ -128,8 +135,10 @@
     <option value="tee">Two taps from one point (riser branch)</option>
   </select>
   <button class="btn" id="undo" title="Undo last step">Undo</button>
-  <button class="btn" id="save">Save</button>
-  <button class="btn" id="load">Load</button>
+  <div class="filewrap">
+    <button class="btn" id="files" aria-haspopup="true" aria-expanded="false">Files ▾</button>
+    <div class="filespop" id="filespop" hidden></div>
+  </div>
   <button class="btn" id="clear">Clear</button>
 </header>
 
@@ -1242,7 +1251,7 @@ function collect(){
 }
 function updateBOM(){
   const el=$("bom");el.innerHTML="";
-  if(!root){el.innerHTML=`<p class="empty">Your shopping list builds itself as you snap parts together.</p>`;return;}
+  if(!root){el.innerHTML=`<p class="empty">Your shopping list builds itself as you snap parts together.</p>`;window._bomText="";window._bomTotal=null;return;}
   const {pipes,fits,joints}=collect();
   let total=0,rows="";
   const pk=Object.keys(pipes);
@@ -1279,6 +1288,7 @@ function updateBOM(){
     el.insertAdjacentHTML("beforeend",`<div class="jsum">Compression joints need no glue or tape — just a spanner.</div>`);
   el.insertAdjacentHTML("beforeend",`<div class="disclaimer">Prices are rough hardware-store estimates (Peninsular Malaysia, 2026) — actual kedai prices vary. Sizes: ½″≈15 mm, ¾″≈20 mm, 1″≈25 mm nominal.</div>`);
   window._bomText=bomText(pipes,fits,joints,total);
+  window._bomTotal=total;
 }
 function bomText(pipes,fits,joints,total){
   let t="PIPE PLAY — SHOPPING LIST\n==========================\n\nPIPES\n";
@@ -1305,14 +1315,71 @@ $("clear").addEventListener("click",()=>{
   if(root&&!confirm("Clear the whole assembly?"))return;
   pushUndo();root=null;selPort=null;selNode=null;refresh();fitView();
 });
-$("save").addEventListener("click",()=>{
-  localStorage.setItem("pipeplay-save",JSON.stringify(serialize(root)));toast("Saved in this browser");
+/* ---- save files (three slots, like emulator save states) ---- */
+const NSLOTS=3, slotKey=i=>"pipeplay-slot-"+i;
+(function migrateOldSave(){ // pre-slot versions stored one design under pipeplay-save
+  try{
+    const old=localStorage.getItem("pipeplay-save");
+    if(old&&old!=="null"&&!localStorage.getItem(slotKey(1))){
+      localStorage.setItem(slotKey(1),JSON.stringify({t:JSON.parse(old),ts:Date.now()}));
+      localStorage.removeItem("pipeplay-save");
+    }
+  }catch(e){}
+})();
+function readSlot(i){
+  try{const s=localStorage.getItem(slotKey(i));return s?JSON.parse(s):null;}catch(e){return null;}
+}
+function countParts(){
+  let n=0;const walk=x=>{if(!x)return;if(x.kind!=="start")n++;for(const k in x.children)walk(x.children[k]);};
+  walk(root);return n;
+}
+function renderSlots(){
+  const pop=$("filespop");pop.innerHTML="";
+  for(let i=1;i<=NSLOTS;i++){
+    const s=readSlot(i);
+    const row=document.createElement("div");row.className="slotrow";
+    const meta=s
+      ?`${s.parts!=null?s.parts+" parts":"saved design"}${s.total!=null?" · RM "+s.total.toFixed(2):""} · ${new Date(s.ts).toLocaleDateString()} ${new Date(s.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`
+      :"Empty";
+    row.innerHTML=`<div class="info"><div class="snm">File ${i}</div><div class="smeta">${meta}</div></div>`;
+    const bSave=document.createElement("button");bSave.className="mini add";bSave.textContent="Save";
+    bSave.addEventListener("click",()=>{
+      if(!root){toast("Nothing to save yet — build something first");return;}
+      if(s&&!confirm(`Overwrite File ${i}?`))return;
+      localStorage.setItem(slotKey(i),JSON.stringify({t:serialize(root),ts:Date.now(),parts:countParts(),total:window._bomTotal??null}));
+      toast(`Saved to File ${i}`);renderSlots();
+    });
+    row.appendChild(bSave);
+    const bLoad=document.createElement("button");bLoad.className="mini";bLoad.textContent="Load";
+    bLoad.addEventListener("click",()=>{
+      const cur=readSlot(i);
+      if(!cur){toast(`File ${i} is empty`);return;}
+      pushUndo();root=build(cur.t);selPort=null;selNode=null;refresh();fitView();
+      closeFiles();toast(`Loaded File ${i} — Undo brings your previous design back`);
+    });
+    row.appendChild(bLoad);
+    const bDel=document.createElement("button");bDel.className="mini";bDel.textContent="Erase";
+    bDel.addEventListener("click",()=>{
+      if(!s)return;
+      if(!confirm(`Erase File ${i}? This cannot be undone.`))return;
+      localStorage.removeItem(slotKey(i));renderSlots();
+    });
+    row.appendChild(bDel);
+    pop.appendChild(row);
+  }
+}
+function closeFiles(){$("filespop").hidden=true;$("files").setAttribute("aria-expanded","false");}
+$("files").addEventListener("click",e=>{
+  e.stopPropagation();
+  const pop=$("filespop");
+  if(pop.hidden){renderSlots();pop.hidden=false;$("files").setAttribute("aria-expanded","true");}
+  else closeFiles();
 });
-$("load").addEventListener("click",()=>{
-  const s=localStorage.getItem("pipeplay-save");
-  if(!s){toast("No saved assembly yet");return;}
-  pushUndo();root=build(JSON.parse(s));selPort=null;selNode=null;refresh();fitView();toast("Loaded");
+$("filespop").addEventListener("click",e=>e.stopPropagation()); // row buttons re-render the menu, so bubble-time closest() checks would misfire
+document.addEventListener("click",e=>{
+  if(!$("filespop").hidden&&!e.target.closest(".filewrap"))closeFiles();
 });
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeFiles();});
 $("copy").addEventListener("click",async()=>{
   if(!window._bomText){toast("Nothing to copy yet");return;}
   try{await navigator.clipboard.writeText(window._bomText);toast("Shopping list copied — paste it anywhere");}
