@@ -1169,8 +1169,18 @@ function renderPanels(){
   if(!pipeOptions.length)
     el.insertAdjacentHTML("beforeend",`<p class="empty">No pipe can reach this connection with the adapters in the catalog.</p>`);
 
-  /* --- individual fittings --- */
-  const fits=candidateFits(spec);
+  /* --- individual fittings ---
+     Socket/compression/fusion openings physically accept only a pipe end, so
+     fitting-to-fitting there needs a short pipe stub in between (like a real
+     plumber cuts from an offcut). Offer those fittings too, stub auto-inserted. */
+  const fits=candidateFits(spec).map(f=>({def:f.def,via:f.via}));
+  const PIPEPORTS={sock:"pvc",comp:"hdpe",bcomp:"palpe",fus:"ppr"};
+  if(PIPEPORTS[spec.t]){
+    const ssys=PIPEPORTS[spec.t], ssz=spec.sz;
+    const have=new Set(fits.map(f=>f.def.id));
+    for(const f of candidateFits(pipeEndSpec(ssys,ssz)))
+      if(!have.has(f.def.id)) fits.push({def:f.def,via:f.via,stub:{sys:ssys,sz:ssz}});
+  }
   const groups=[["Add a fitting here",fits.filter(f=>f.def.geo!=="end"&&(sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def))],
                 ["Change material or size (adapters)",fits.filter(f=>f.def.geo!=="end"&&!((sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def)))],
                 ["Finish the line (taps, caps)",fits.filter(f=>f.def.geo==="end")]];
@@ -1184,9 +1194,21 @@ function renderPanels(){
         <div class="nm">${d.name}</div>
         <div class="store">Ask for: ${d.store}</div>
         ${d.note?`<div class="note">${d.note}</div>`:""}
+        ${f.stub?`<div class="chain">Goes in the middle: <b>10 cm pipe stub</b> (cut from your ${SYS[f.stub.sys].label.split(" ")[0]} pipe — two fittings can't join socket-to-socket directly)</div>`:""}
         <div class="row"><span class="price">≈ RM ${d.price.toFixed(2)}</span><span class="rowbtns"></span></div></div>`;
       const btns=c.querySelector(".rowbtns");
-      const addWith=(meta,via)=>{pushUndo();const node=mkNode("fit",d.id,meta);node.via=(via!=null?via:f.via);attach(selPort.node,selPort.key,node);advanceSelection(node);refresh();};
+      const addWith=(meta,via)=>{
+        pushUndo();
+        let at={node:selPort.node,key:selPort.key};
+        if(f.stub){
+          const st=mkNode("pipe",{sys:f.stub.sys,sz:f.stub.sz},{L:0.1});
+          attach(at.node,at.key,st);
+          at={node:st,key:0};
+        }
+        const node=mkNode("fit",d.id,meta);node.via=(via!=null?via:f.via);
+        attach(at.node,at.key,node);
+        advanceSelection(node);refresh();
+      };
       if(d.geo==="elbow"){
         const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
         ps.forEach((o,i)=>mk(btns,labs[i],()=>addWith({out:o})));
