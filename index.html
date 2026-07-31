@@ -95,6 +95,9 @@
   details.joint{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin-bottom:6px;font-size:12.5px}
   details.joint summary{cursor:pointer;font-weight:600;font-size:12.5px}
   details.joint p{margin:6px 0 2px;color:var(--mut)}
+  details.syssec{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin-bottom:7px}
+  details.syssec summary{cursor:pointer;font-weight:600;font-size:12.5px}
+  details.syssec .card{margin-top:7px}
 
   table.bom{width:100%;border-collapse:collapse;font-size:12.5px}
   table.bom td{padding:4px 2px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -311,32 +314,48 @@ const STARTS = {
 };
 
 /* ============ "what do you want to combine this with?" ============
-   BFS through straight (inline) fittings: from the open connection spec to a
-   spec that accepts the target pipe. Returns the fittings that go in the middle. */
+   Breadth-first search from the open connection to ANY other connection type.
+   Middle pieces can be straight (inline) fittings OR short pipe stubs — a
+   10 cm offcut, which is how a plumber bridges two socket/compression
+   fittings. This makes anything combinable with anything the catalog allows. */
 function specKey(sp){return sp.t+"|"+(sp.sz||"")+"|"+(sp.sys||"");}
-function chainTo(A,sys,sz){
-  const goalSpec=pipeEndSpec(sys,sz);
-  if(match(A,goalSpec)) return {defs:[],cost:0};
-  let frontier=[{s:A,path:[]}];
-  const seen=new Set([specKey(A)]);
-  for(let depth=0;depth<3;depth++){
+const STUBPORTS={sock:"pvc",comp:"hdpe",bcomp:"palpe",fus:"ppr"};
+function moves(spec){
+  const out=[];
+  const ss=STUBPORTS[spec.t];
+  if(ss) out.push({step:{type:"stub",sys:ss,sz:spec.sz},next:pipeEndSpec(ss,spec.sz),cost:0.5});
+  for(const f of INLINES)
+    for(let i=0;i<2;i++)
+      if(match(spec,f.ports[i])) out.push({step:{type:"fit",def:f,via:i},next:f.ports[1-i],cost:f.price});
+  return out;
+}
+function exploreChains(A,maxSteps){ // every reachable connection type + the cheapest-ish path to it
+  maxSteps=maxSteps||4;
+  const out=new Map();out.set(specKey(A),{spec:A,steps:[],cost:0});
+  let frontier=[{s:A,steps:[],cost:0}];
+  for(let d=0;d<maxSteps;d++){
     const next=[];
     for(const st of frontier){
-      for(const f of INLINES){
-        for(let i=0;i<2;i++){
-          if(!match(st.s,f.ports[i])) continue;
-          const ns=f.ports[1-i], k=specKey(ns);
-          if(seen.has(k)) continue;
-          seen.add(k);
-          const path=st.path.concat([{def:f,via:i}]);
-          if(match(ns,goalSpec)) return {defs:path,cost:path.reduce((t,p)=>t+p.def.price,0)};
-          next.push({s:ns,path});
-        }
+      for(const m of moves(st.s).sort((a,b)=>a.cost-b.cost)){
+        const k=specKey(m.next);
+        if(out.has(k)) continue;
+        const cand={spec:m.next,steps:st.steps.concat([m.step]),cost:st.cost+m.cost};
+        out.set(k,cand);next.push({s:cand.spec,steps:cand.steps,cost:cand.cost});
       }
     }
     frontier=next;
   }
-  return null;
+  return [...out.values()];
+}
+function bestChainTo(reach,goal){ // goal(spec) -> info object or null
+  let best=null;
+  for(const r of reach){
+    const gi=goal(r.spec);
+    if(!gi) continue;
+    if(!best||r.steps.length<best.steps.length||(r.steps.length===best.steps.length&&r.cost<best.cost))
+      best={steps:r.steps,cost:r.cost,info:gi};
+  }
+  return best;
 }
 
 /* ================= state ================= */
@@ -992,15 +1011,6 @@ function defThumb(d){
 function sysOfSpec(sp){
   return {sock:"pvc",comp:"hdpe",bcomp:"palpe",fus:"ppr"}[sp.t] || (sp.t==="pend"?sp.sys:null);
 }
-function candidateFits(spec){
-  const out=[];
-  for(const d of DEFS){
-    for(let i=0;i<d.ports.length;i++){
-      if(match(spec,d.ports[i])){ out.push({def:d,via:i}); break; }
-    }
-  }
-  return out;
-}
 function pipePricePerM(sys,sz){const S=SYS[sys];return S.perM?S.perM[sz]:S.perUnit[sz]/S.unitLen;}
 function isTransition(d){
   const kinds=new Set(d.ports.map(p=>p.t));
@@ -1132,45 +1142,57 @@ function renderPanels(){
   el.insertAdjacentHTML("beforeend",`<p class="ctx">Open connection: <b>${specLabel(spec)}</b>.<br>What do you want to combine this with?</p>
     <p class="note" style="margin:-4px 0 10px">The <b>orange arrow</b> shows which way new parts grow. Pipes only go straight — to turn the run sideways or up/down, add an <b>elbow</b>; to point the whole line elsewhere, click the wall/start and change its facing.</p>`);
 
-  /* --- combine with a pipe: connector auto-inserted in the middle --- */
+  /* --- everything combinable: chains found from this connection --- */
+  const reach=exploreChains(spec,4);
+  const fitPrices=steps=>steps.filter(s=>s.type==="fit").reduce((t,s)=>t+s.def.price,0);
+  const stubCount=steps=>steps.filter(s=>s.type==="stub").length;
+  const stepName=s=>s.type==="stub"?("10 cm "+SYS[s.sys].label.split(" ")[0]+" stub"):s.def.name;
+  const chainHTML=steps=>steps.length
+    ?`<div class="chain">Goes in the middle: <b>${steps.map(stepName).join(" + ")}</b>${fitPrices(steps)>0?` (adds RM ${fitPrices(steps).toFixed(2)})`:""}</div>`
+    :`<div class="chain">Fits directly — no adapter needed</div>`;
+  function insertChain(steps){ // insert middle pieces, return the new attach point
+    let at={node:selPort.node,key:selPort.key};
+    for(const stp of steps){
+      let n2;
+      if(stp.type==="stub") n2=mkNode("pipe",{sys:stp.sys,sz:stp.sz},{L:0.1});
+      else { n2=mkNode("fit",stp.def.id,{}); n2.via=stp.via; }
+      attach(at.node,at.key,n2);
+      at={node:n2,key:portsOf(n2)[0].key};
+    }
+    return at;
+  }
+
+  /* pipes */
   el.insertAdjacentHTML("beforeend",`<div class="grouph">Combine with a pipe</div>`);
   const pipeOptions=[];
   for(const sys in SYS){
     if(!SYS[sys].sizes.length)continue;
     for(const sz of SYS[sys].sizes){
-      const chain=chainTo(spec,sys,sz);
-      if(chain)pipeOptions.push({sys,sz,chain});
+      const best=bestChainTo(reach,s=>match(s,pipeEndSpec(sys,sz))?{ok:1}:null);
+      if(best)pipeOptions.push({sys,sz,steps:best.steps});
     }
   }
   pipeOptions.sort((a,b)=>{
-    const sa=(sysOfSpec(spec)===a.sys?0:1)-(sysOfSpec(spec)===b.sys?0:1);
+    const sa=(ctxSys===a.sys?0:1)-(ctxSys===b.sys?0:1);
     if(sa)return sa;
-    return (a.chain.defs.length-b.chain.defs.length)||(a.chain.cost-b.chain.cost);
+    return (a.steps.length-b.steps.length)||(fitPrices(a.steps)-fitPrices(b.steps));
   });
   for(const p of pipeOptions){
     const S=SYS[p.sys];
     const c=document.createElement("div");c.className="card";
-    const chainTxt=p.chain.defs.length
-      ?`Goes in the middle: <b>${p.chain.defs.map(x=>x.def.name).join(" + ")}</b> (adds RM ${p.chain.cost.toFixed(2)})`
-      :`Fits directly — no adapter needed`;
     c.innerHTML=`<img class="thumb" alt="" src="${pipeThumb(p.sys,p.sz)}"><div class="ct">
       <div class="nm">${S.label} ${S.szl(p.sz)}</div>
       <div class="store">${S.pipeStore(p.sz)}</div>
-      <div class="chain">${chainTxt}</div>
+      ${chainHTML(p.steps)}
       <div class="row"><label>Length <input class="len" type="number" min="0.1" max="30" step="0.1" value="1.0"> m</label>
       <span class="price">≈ RM ${pipePricePerM(p.sys,p.sz).toFixed(2)}/m</span>
       <button class="mini add">Combine</button></div></div>`;
     c.querySelector(".add").addEventListener("click",()=>{
       const L=Math.max(.1,Math.min(30,parseFloat(c.querySelector(".len").value)||1));
       pushUndo();
-      let cur={node:selPort.node,key:selPort.key};
-      for(const step of p.chain.defs){
-        const fnode=mkNode("fit",step.def.id,{});fnode.via=step.via;
-        attach(cur.node,cur.key,fnode);
-        cur={node:fnode,key:portsOf(fnode)[0].key};
-      }
+      const at=insertChain(p.steps);
       const pnode=mkNode("pipe",{sys:p.sys,sz:p.sz},{L:Math.round(L*10)/10});
-      attach(cur.node,cur.key,pnode);
+      attach(at.node,at.key,pnode);
       advanceSelection(pnode);refresh();
     });
     el.appendChild(c);
@@ -1178,63 +1200,78 @@ function renderPanels(){
   if(!pipeOptions.length)
     el.insertAdjacentHTML("beforeend",`<p class="empty">No pipe can reach this connection with the adapters in the catalog.</p>`);
 
-  /* --- individual fittings ---
-     Socket/compression/fusion openings physically accept only a pipe end, so
-     fitting-to-fitting there needs a short pipe stub in between (like a real
-     plumber cuts from an offcut). Offer those fittings too, stub auto-inserted. */
-  const fits=candidateFits(spec).map(f=>({def:f.def,via:f.via}));
-  const PIPEPORTS={sock:"pvc",comp:"hdpe",bcomp:"palpe",fus:"ppr"};
-  if(PIPEPORTS[spec.t]){
-    const ssys=PIPEPORTS[spec.t], ssz=spec.sz;
-    const have=new Set(fits.map(f=>f.def.id));
-    for(const f of candidateFits(pipeEndSpec(ssys,ssz)))
-      if(!have.has(f.def.id)) fits.push({def:f.def,via:f.via,stub:{sys:ssys,sz:ssz}});
+  /* fittings: every catalog part reachable from here, with its middle chain */
+  const fitChains=[];
+  for(const d of DEFS){
+    const best=bestChainTo(reach,s=>{
+      for(let i=0;i<d.ports.length;i++) if(match(s,d.ports[i])) return {via:i};
+      return null;
+    });
+    if(best)fitChains.push({def:d,via:best.info.via,steps:best.steps});
   }
-  const groups=[["Add a fitting here",fits.filter(f=>f.def.geo!=="end"&&(sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def))],
-                ["Change material or size (adapters)",fits.filter(f=>f.def.geo!=="end"&&!((sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def)))],
-                ["Finish the line (taps, caps)",fits.filter(f=>f.def.geo==="end")]];
-  for(const [gname,list] of groups){
-    if(!list.length)continue;
-    el.insertAdjacentHTML("beforeend",`<div class="grouph">${gname}</div>`);
-    for(const f of list){
-      const d=f.def;
-      const c=document.createElement("div");c.className="card";
-      c.innerHTML=`<img class="thumb" alt="" src="${defThumb(d)}"><div class="ct">
-        <div class="nm">${d.name}</div>
-        <div class="store">Ask for: ${d.store}</div>
-        ${d.note?`<div class="note">${d.note}</div>`:""}
-        ${f.stub?`<div class="chain">Goes in the middle: <b>10 cm pipe stub</b> (cut from your ${SYS[f.stub.sys].label.split(" ")[0]} pipe — two fittings can't join socket-to-socket directly)</div>`:""}
-        <div class="row"><span class="price">≈ RM ${d.price.toFixed(2)}</span><span class="rowbtns"></span></div></div>`;
-      const btns=c.querySelector(".rowbtns");
-      const addWith=(meta,via)=>{
-        pushUndo();
-        let at={node:selPort.node,key:selPort.key};
-        if(f.stub){
-          const st=mkNode("pipe",{sys:f.stub.sys,sz:f.stub.sz},{L:0.1});
-          attach(at.node,at.key,st);
-          at={node:st,key:0};
-        }
-        const node=mkNode("fit",d.id,meta);node.via=(via!=null?via:f.via);
-        attach(at.node,at.key,node);
-        advanceSelection(node);refresh();
-      };
-      if(d.geo==="elbow"){
-        const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
-        ps.forEach((o,i)=>mk(btns,labs[i],()=>addWith({out:o})));
-      } else if(d.geo==="tee"){
-        const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
-        ps.forEach((o,i)=>mk(btns,"branch "+labs[i],()=>addWith({branch:o})));
-        for(const rd of midAxes(selPort.dir)){
-          const w=rd>=4?"run up-down":(selPort.dir>=4?(rd%2===0?"run E–W":"run N–S"):"run sideways");
-          mk(btns,"⊥ into middle · "+w,()=>addWith({runDir:rd},2));
-        }
-      } else mk(btns,"Add",()=>addWith({}),true);
-      if(d.geo==="tee")
-        c.querySelector(".ct").insertAdjacentHTML("beforeend",
-          `<div class="note">"Branch" = your line flows through and a side outlet tees off. "Into middle" = your line enters the tee's middle and the run lies across it (both sides stay open).</div>`);
-      el.appendChild(c);
+  const byRank=(a,b)=>(a.steps.length-b.steps.length)||(fitPrices(a.steps)-fitPrices(b.steps))||(a.def.price-b.def.price);
+  function makeFitCard(f){
+    const d=f.def;
+    const c=document.createElement("div");c.className="card";
+    c.innerHTML=`<img class="thumb" alt="" src="${defThumb(d)}"><div class="ct">
+      <div class="nm">${d.name}</div>
+      <div class="store">Ask for: ${d.store}</div>
+      ${d.note?`<div class="note">${d.note}</div>`:""}
+      ${f.steps.length?chainHTML(f.steps):""}
+      <div class="row"><span class="price">≈ RM ${d.price.toFixed(2)}</span><span class="rowbtns"></span></div></div>`;
+    const btns=c.querySelector(".rowbtns");
+    const addWith=(meta,via)=>{
+      pushUndo();
+      const at=insertChain(f.steps);
+      const node=mkNode("fit",d.id,meta);node.via=(via!=null?via:f.via);
+      attach(at.node,at.key,node);
+      advanceSelection(node);refresh();
+    };
+    if(d.geo==="elbow"){
+      const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
+      ps.forEach((o,i)=>mk(btns,labs[i],()=>addWith({out:o})));
+    } else if(d.geo==="tee"){
+      const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
+      ps.forEach((o,i)=>mk(btns,"branch "+labs[i],()=>addWith({branch:o})));
+      for(const rd of midAxes(selPort.dir)){
+        const w=rd>=4?"run up-down":(selPort.dir>=4?(rd%2===0?"run E–W":"run N–S"):"run sideways");
+        mk(btns,"⊥ into middle · "+w,()=>addWith({runDir:rd},2));
+      }
+      c.querySelector(".ct").insertAdjacentHTML("beforeend",
+        `<div class="note">"Branch" = your line flows through and a side outlet tees off. "Into middle" = your line enters the tee's middle and the run lies across it (both sides stay open).</div>`);
+    } else mk(btns,"Add",()=>addWith({}),true);
+    return c;
+  }
+  // near = direct fits, or bridged by a single same-system stub (the everyday cases)
+  const isNear=f=>!f.steps.length||(f.steps.length===1&&f.steps[0].type==="stub"&&f.steps[0].sys===ctxSys);
+  const ends=fitChains.filter(f=>f.def.geo==="end").sort(byRank);
+  const near=fitChains.filter(f=>f.def.geo!=="end"&&isNear(f));
+  const g1=near.filter(f=>(sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def)).sort(byRank);
+  const g2=near.filter(f=>!g1.includes(f)).sort(byRank);
+  const far=fitChains.filter(f=>f.def.geo!=="end"&&!isNear(f));
+  const renderGroup=(title,list)=>{
+    if(!list.length)return;
+    el.insertAdjacentHTML("beforeend",`<div class="grouph">${title}</div>`);
+    for(const f of list)el.appendChild(makeFitCard(f));
+  };
+  renderGroup("Add a fitting here",g1);
+  renderGroup("Change material or size (adapters)",g2);
+  if(far.length){
+    el.insertAdjacentHTML("beforeend",`<div class="grouph">Other materials — connector goes in the middle</div>`);
+    const bySys={};
+    for(const f of far)(bySys[f.def.sys]=bySys[f.def.sys]||[]).push(f);
+    for(const sys in bySys){
+      const list=bySys[sys].sort(byRank);
+      const det=document.createElement("details");det.className="syssec";
+      det.innerHTML=`<summary><span class="swatch" style="background:${SYS[sys].fit}"></span>${SYS[sys].label} <span style="font-weight:400;color:var(--mut);font-size:11.5px">· ${list.length} fittings</span></summary>`;
+      let filled=false;
+      det.addEventListener("toggle",()=>{
+        if(det.open&&!filled){filled=true;for(const f of list)det.appendChild(makeFitCard(f));}
+      });
+      el.appendChild(det);
     }
   }
+  renderGroup("Finish the line (taps, caps)",ends);
   updateBOM();
 }
 

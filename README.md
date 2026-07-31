@@ -16,12 +16,15 @@ Open `index.html` in any browser. No build step, no dependencies, works offline.
   after placing, live in 3D). Clicking uses GPU color-picking; the engine
   (mesh generation, lighting, camera, picking) is hand-written because the
   page is fully self-contained.
-- **"What do you want to combine this with?"** — click any open connection and
-  every pipe type is offered **with a rendered 3D picture**; pick one and the
-  correct connector (or chain of connectors — valve socket, reducing socket,
-  male adaptor…) is placed in the middle automatically, found by searching the
-  fitting catalog. Every fitting card in the chooser also shows its own 3D
-  thumbnail.
+- **"What do you want to combine this with?" — anything to anything** — click
+  any open connection and every pipe type *and every fitting in the catalog*
+  is offered **with a rendered 3D picture**; pick one and the correct chain of
+  middle pieces (valve socket, reducing socket, male/female adaptors, and
+  10 cm pipe stubs where two fittings can't join directly) is placed in the
+  middle automatically, found by breadth-first search over the catalog. So a
+  PVC line can take an HDPE elbow, a PE-AL-PE tee can meet a GI valve — the
+  app works out and prices the connectors in between. Cross-material fittings
+  are grouped in collapsible per-material sections to keep the panel tidy.
 - **Real compatibility rules** — it only offers parts that genuinely fit the
   open connection: solvent sockets take PVC, compression fittings take HDPE,
   BSP male meets BSP female, and cross-material transitions go through the
