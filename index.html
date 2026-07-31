@@ -142,7 +142,7 @@
   <section class="canvas-wrap">
     <canvas id="gl"></canvas>
     <div id="labels"></div>
-    <div class="hint" id="hint">Drag to orbit · scroll to zoom · Shift-drag to pan · click an <b>orange ball</b> to attach parts</div>
+    <div class="hint" id="hint">Drag to orbit · scroll to zoom · Shift-drag to pan · click an <b>orange ball</b> to attach parts — arrows show which way the line grows</div>
     <div class="zoombar">
       <button class="btn" id="zin" aria-label="Zoom in">+</button>
       <button class="btn" id="zout" aria-label="Zoom out">−</button>
@@ -463,6 +463,12 @@ function m4look(eye,ctr,up){
 }
 const M4I=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
 const m4ts=(p,s)=>[s,0,0,0, 0,s,0,0, 0,0,s,0, p[0],p[1],p[2],1];
+function m4basis(p,d,s){ // maps +X onto direction d, translated to p, uniformly scaled
+  const v=DIRV[d];
+  const u=Math.abs(v[2])<0.9?V.norm(V.cross(v,[0,0,1])):[1,0,0];
+  const w=V.cross(v,u);
+  return [v[0]*s,v[1]*s,v[2]*s,0, u[0]*s,u[1]*s,u[2]*s,0, w[0]*s,w[1]*s,w[2]*s,0, p[0],p[1],p[2],1];
+}
 function hex2rgb(h){const n=parseInt(h.slice(1),16);return [((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255];}
 
 /* ================= mesh builders ================= */
@@ -483,6 +489,20 @@ function cylinder(arr,a,b,r,seg,col,pick,capped){
       pushV(arr,a,na,col,pick);pushV(arr,aj,na,col,pick);pushV(arr,ai,na,col,pick);
       pushV(arr,b,ax,col,pick);pushV(arr,bi,ax,col,pick);pushV(arr,bj,ax,col,pick);
     }
+  }
+}
+function cone(arr,base,apex,r,seg,col,pick){
+  const ax=V.norm(V.sub(apex,base));
+  let u=Math.abs(ax[2])<0.9?V.norm(V.cross(ax,[0,0,1])):V.norm(V.cross(ax,[1,0,0]));
+  const v=V.cross(ax,u);
+  const ring=[];
+  for(let i=0;i<seg;i++){const ang=2*Math.PI*i/seg;ring.push(V.add(V.scl(u,Math.cos(ang)),V.scl(v,Math.sin(ang))));}
+  for(let i=0;i<seg;i++){
+    const j=(i+1)%seg, di=ring[i], dj=ring[j];
+    const bi=V.add(base,V.scl(di,r)), bj=V.add(base,V.scl(dj,r));
+    pushV(arr,bi,di,col,pick);pushV(arr,bj,dj,col,pick);pushV(arr,apex,V.norm(V.add(di,dj)),col,pick);
+    const na=V.scl(ax,-1);
+    pushV(arr,base,na,col,pick);pushV(arr,bj,na,col,pick);pushV(arr,bi,na,col,pick);
   }
 }
 function sphere(arr,c,r,col,pick,st,sl){
@@ -534,7 +554,8 @@ function meshForShape(arr,s,pick){
     if(d.id.startsWith("tap")){
       const top=V.add(s.b,[0,0,.075]);
       cylinder(arr,s.b,top,.016,10,GOLD,pick,true);                       // riser body
-      const sd=dirv(s.d<4?s.d:0);
+      const face=(s.n&&s.n.meta&&s.n.meta.face!=null)?s.n.meta.face:(s.d<4?s.d:0);
+      const sd=dirv(face);
       const sp=V.add(top,V.scl(sd,.075));
       cylinder(arr,top,sp,.013,10,GOLD,pick,true);                        // spout
       cylinder(arr,sp,V.add(sp,[0,0,-.035]),.011,10,GOLD,pick,true);      // spout drop
@@ -568,7 +589,8 @@ function meshForShape(arr,s,pick){
       sphere(arr,s.p,.028,grey,pick);
     } else {
       const back=V.scl(dirv(OPP(s.d)),.03);
-      box(arr,V.add(s.p,back),[.06,.5,.5],hex2rgb("#B9B4A6"),pick);
+      const dims=s.d>=4?[.5,.5,.06]:(s.d%2===0?[.06,.5,.5]:[.5,.06,.5]);
+      box(arr,V.add(s.p,back),dims,hex2rgb("#B9B4A6"),pick);
       cylinder(arr,s.p,V.add(s.p,V.scl(dirv(s.d),.05)),.028,12,grey,pick,true);
     }
   }
@@ -671,6 +693,17 @@ const NOPICK=[0,0,0];
 const sphereArr=[];sphere(sphereArr,[0,0,0],1,[1,1,1],[0,0,0],10,14);
 const SPHERE_F32=new Float32Array(sphereArr);
 if(ENG)ENG.setDyn(SPHERE_F32);
+/* direction arrow (points +X), shown on every open connection */
+let arrowBuf=null,arrowCount=0;
+if(ENG){
+  const aArr=[];
+  cylinder(aArr,[0.07,0,0],[0.23,0,0],.013,10,[1,1,1],[0,0,0],true);
+  cone(aArr,[0.23,0,0],[0.34,0,0],.036,12,[1,1,1],[0,0,0]);
+  arrowBuf=ENG.gl.createBuffer();
+  ENG.gl.bindBuffer(ENG.gl.ARRAY_BUFFER,arrowBuf);
+  ENG.gl.bufferData(ENG.gl.ARRAY_BUFFER,new Float32Array(aArr),ENG.gl.STATIC_DRAW);
+  arrowCount=aArr.length/12;
+}
 
 function rebuildScene(){
   if(!ENG)return;
@@ -678,7 +711,7 @@ function rebuildScene(){
   const arr=[];
   if(root){
     const out={shapes:[],ports:[],labels:[]};
-    layout(root,[0,0,0],0,out);
+    layout(root,[0,0,0],root.meta.face??0,out);
     const nodePick=new Map();
     for(const s of out.shapes){
       let id=nodePick.get(s.n);
@@ -775,6 +808,17 @@ function drawScene(mode){
     gl.uniform3fv(ENG.U.color,sel?themeColors.ink:themeColors.accent);
     gl.uniform3fv(ENG.U.pick,encPick(p.pickId));
     gl.drawArrays(gl.TRIANGLES,0,c.dynCount);
+  }
+  // growth-direction arrows on every open connection
+  if(arrowCount){
+    ENG.bindMain(arrowBuf);
+    for(const p of lastPorts){
+      const sel=selPort&&selPort.node===p.node&&selPort.key===p.key;
+      gl.uniformMatrix4fv(ENG.U.model,false,m4basis(p.pos,p.dir,sel?1.25:0.9));
+      gl.uniform3fv(ENG.U.color,sel?themeColors.accent:[0.56,0.58,0.59]);
+      gl.uniform3fv(ENG.U.pick,encPick(p.pickId));
+      gl.drawArrays(gl.TRIANGLES,0,arrowCount);
+    }
   }
 }
 function frame(){
@@ -947,7 +991,14 @@ function advanceSelection(node){
   selPort=ps.length?{node,key:ps[0].key,spec:ps[0].spec}:null;
   selNode=null;
 }
-function refresh(){rebuildScene();renderPanels();}
+function refresh(){
+  rebuildScene();
+  if(selPort){ // keep the working end on screen
+    const pr=project(selPort.pos);
+    if(pr[2]<0.05||Math.abs(pr[0])>0.92||Math.abs(pr[1])>0.92) fitView();
+  }
+  renderPanels();
+}
 function mk(parent,label,fn,primary){const b=document.createElement("button");b.className="mini"+(primary?" add":"");b.textContent=label;b.addEventListener("click",fn);parent.appendChild(b);}
 function legend(el){
   el.insertAdjacentHTML("beforeend",`<div class="grouph">How each joint is made</div>`);
@@ -967,7 +1018,7 @@ function renderPanels(){
       const s=STARTS[id];
       const c=document.createElement("div"); c.className="card startcard"; c.tabIndex=0; c.setAttribute("role","button");
       c.innerHTML=`<div class="ct"><div class="nm">${s.name}</div><div class="store">${s.store}</div>${s.note?`<div class="note">${s.note}</div>`:""}</div>`;
-      const go=()=>{pushUndo();root=mkNode("start",id);selPort=null;rebuildScene();fitView();renderPanels();};
+      const go=()=>{pushUndo();root=mkNode("start",id);selPort={node:root,key:0};rebuildScene();fitView();renderPanels();};
       c.addEventListener("click",go);
       c.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
       el.appendChild(c);
@@ -996,21 +1047,41 @@ function renderPanels(){
       });
       row.appendChild(b);el.appendChild(row);
     }
+    if(selNode.kind==="start"){
+      const DIRWORD=["East","South","West","North","Up","Down"];
+      el.insertAdjacentHTML("beforeend",`<div class="grouph">Facing — which way does it point?</div>`);
+      const row=document.createElement("div");row.className="row";row.style.marginBottom="8px";
+      const cur=selNode.meta.face??0;
+      DIRWORD.forEach((w,d)=>{
+        const b=document.createElement("button");
+        b.className="mini"+(d===cur?" add":"");b.textContent=w;
+        b.addEventListener("click",()=>{pushUndo();selNode.meta.face=d;refresh();fitView();});
+        row.appendChild(b);
+      });
+      el.appendChild(row);
+      el.insertAdjacentHTML("beforeend",`<p class="note" style="margin:0 0 8px">The whole line grows from here — the grey arrow in 3D shows the current facing.</p>`);
+    }
     if(selNode.kind==="fit"){
       const d=DEFBY[selNode.data];
-      if(d.geo==="elbow"||d.geo==="tee"){
+      const isTap=d.id.startsWith("tap");
+      if(d.geo==="elbow"||d.geo==="tee"||isTap){
         const b=document.createElement("button");b.className="btn";b.style.marginBottom="8px";
         b.textContent="↻ Rotate direction";
         b.addEventListener("click",()=>{
           pushUndo();
-          const ps=PERPS(selNode._d);
-          const kmeta=d.geo==="elbow"?"out":"branch";
-          const cur=selNode.meta[kmeta]??ps[0];
-          selNode.meta[kmeta]=ps[(ps.indexOf(cur)+1)%ps.length];
+          if(isTap){
+            const cur=selNode.meta.face??(selNode._d<4?selNode._d:0);
+            selNode.meta.face=(cur+1)%4;
+          } else {
+            const ps=PERPS(selNode._d);
+            const kmeta=d.geo==="elbow"?"out":"branch";
+            const cur=selNode.meta[kmeta]??ps[0];
+            selNode.meta[kmeta]=ps[(ps.indexOf(cur)+1)%ps.length];
+          }
           refresh();
         });
         el.appendChild(b);
-        el.insertAdjacentHTML("beforeend",`<p class="note" style="margin:0 0 8px">Rotates where the ${d.geo==="elbow"?"turn":"branch"} points — cycle through left / right / up / down and watch it in 3D.</p>`);
+        el.insertAdjacentHTML("beforeend",`<p class="note" style="margin:0 0 8px">${isTap?"Spins the tap spout to face another way.":"Rotates where the "+(d.geo==="elbow"?"turn":"branch")+" points — cycle through the four directions and watch it in 3D."}</p>`);
       }
     }
     if(selNode.parent){
@@ -1036,7 +1107,8 @@ function renderPanels(){
   lt.textContent="Attach here";
   const spec=selPort.spec;
   const ctxSys=sysOfSpec(spec);
-  el.insertAdjacentHTML("beforeend",`<p class="ctx">Open connection: <b>${specLabel(spec)}</b>.<br>What do you want to combine this with?</p>`);
+  el.insertAdjacentHTML("beforeend",`<p class="ctx">Open connection: <b>${specLabel(spec)}</b>.<br>What do you want to combine this with?</p>
+    <p class="note" style="margin:-4px 0 10px">The <b>orange arrow</b> shows which way new parts grow. Pipes only go straight — to turn the run sideways or up/down, add an <b>elbow</b>; to point the whole line elsewhere, click the wall/start and change its facing.</p>`);
 
   /* --- combine with a pipe: connector auto-inserted in the middle --- */
   el.insertAdjacentHTML("beforeend",`<div class="grouph">Combine with a pipe</div>`);
@@ -1242,8 +1314,11 @@ $("examples").addEventListener("change",e=>{
 window.PP={
   ports:()=>{const r=canvas.getBoundingClientRect();
     return lastPorts.map(p=>{const pr=project(p.pos);
-      return {x:r.left+(pr[0]+1)/2*canvas.clientWidth,y:r.top+(1-pr[1])/2*canvas.clientHeight,spec:p.spec.t};});},
+      return {x:r.left+(pr[0]+1)/2*canvas.clientWidth,y:r.top+(1-pr[1])/2*canvas.clientHeight,spec:p.spec.t,dir:p.dir};});},
+  proj:(p)=>{const r=canvas.getBoundingClientRect();const pr=project(p);
+    return {x:r.left+(pr[0]+1)/2*canvas.clientWidth,y:r.top+(1-pr[1])/2*canvas.clientHeight};},
   ser:()=>serialize(root),
+  pickAt:(x,y)=>{const h=pick(x,y);return h?{type:h.type,kind:h.node?h.node.kind:h.port.spec.t}:null;},
   webgl:!!ENG
 };
 
