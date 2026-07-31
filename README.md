@@ -8,13 +8,20 @@ Open `index.html` in any browser. No build step, no dependencies, works offline.
 
 ## What it does
 
-- **Snap-together 3D canvas (isometric)** — start from a wall point, pipe stub,
-  water tank, or a free run, then click the orange dots to attach the next
-  part. The scene is true 3D drawn as a plumber's isometric: elbows and tees
-  can turn in the four horizontal directions **and up/down**, so risers,
-  standpipes and drops render properly. Parts above the floor cast a soft
-  shadow on the ground plane so height reads at a glance, and vertical runs
-  are labelled with ↑/↓.
+- **Real 3D canvas (WebGL, no libraries)** — pipes are actual lit cylinders in
+  a scene you can orbit, zoom and pan, so above/below/vertical is never
+  ambiguous. Start from a wall point, pipe stub, water tank, or a free run,
+  then click the pulsing orange balls to attach the next part. Elbows and tees
+  turn in the four horizontal directions **and up/down** (and can be rotated
+  after placing, live in 3D). Clicking uses GPU color-picking; the engine
+  (mesh generation, lighting, camera, picking) is hand-written because the
+  page is fully self-contained.
+- **"What do you want to combine this with?"** — click any open connection and
+  every pipe type is offered **with a rendered 3D picture**; pick one and the
+  correct connector (or chain of connectors — valve socket, reducing socket,
+  male adaptor…) is placed in the middle automatically, found by searching the
+  fitting catalog. Every fitting card in the chooser also shows its own 3D
+  thumbnail.
 - **Real compatibility rules** — it only offers parts that genuinely fit the
   open connection: solvent sockets take PVC, compression fittings take HDPE,
   BSP male meets BSP female, and cross-material transitions go through the

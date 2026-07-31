@@ -4,39 +4,39 @@
 <style>
   :root{
     --bg:#F4F3EF; --panel:#FFFFFF; --panel2:#EDECE6; --ink:#20262B; --mut:#6B7680;
-    --line:#DCDBD2; --grid:#E7E6DE; --grid2:#DEDDD3;
+    --line:#DCDBD2;
     --accent:#E8621D; --accent-soft:#FBE9DE; --accent-ink:#FFFFFF;
     --ok:#2F7D4D; --warn:#B3261E;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --shadow:0 1px 3px rgba(32,38,43,.08);
-    --shadowline:rgba(32,38,43,.14);
+    --canvasbg:#ECEBE5; --gridline:#D8D7CE;
   }
   @media (prefers-color-scheme: dark){
     :root{
       --bg:#15191D; --panel:#1D2328; --panel2:#232A30; --ink:#E8EAE6; --mut:#95A0A8;
-      --line:#2C343B; --grid:#1B2126; --grid2:#20272D;
+      --line:#2C343B;
       --accent:#F07A33; --accent-soft:#3A2417; --accent-ink:#16110C;
       --ok:#5BBB84; --warn:#F2827B;
       --shadow:0 1px 3px rgba(0,0,0,.4);
-      --shadowline:rgba(0,0,0,.5);
+      --canvasbg:#171C21; --gridline:#242C33;
     }
   }
   :root[data-theme="dark"]{
     --bg:#15191D; --panel:#1D2328; --panel2:#232A30; --ink:#E8EAE6; --mut:#95A0A8;
-    --line:#2C343B; --grid:#1B2126; --grid2:#20272D;
+    --line:#2C343B;
     --accent:#F07A33; --accent-soft:#3A2417; --accent-ink:#16110C;
     --ok:#5BBB84; --warn:#F2827B;
     --shadow:0 1px 3px rgba(0,0,0,.4);
-    --shadowline:rgba(0,0,0,.5);
+    --canvasbg:#171C21; --gridline:#242C33;
   }
   :root[data-theme="light"]{
     --bg:#F4F3EF; --panel:#FFFFFF; --panel2:#EDECE6; --ink:#20262B; --mut:#6B7680;
-    --line:#DCDBD2; --grid:#E7E6DE; --grid2:#DEDDD3;
+    --line:#DCDBD2;
     --accent:#E8621D; --accent-soft:#FBE9DE; --accent-ink:#FFFFFF;
     --ok:#2F7D4D; --warn:#B3261E;
     --shadow:0 1px 3px rgba(32,38,43,.08);
-    --shadowline:rgba(32,38,43,.14);
+    --canvasbg:#ECEBE5; --gridline:#D8D7CE;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -51,45 +51,37 @@
   .btn{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:5px 11px;cursor:pointer}
   .btn:hover{background:var(--panel2)}
   .btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
-  .btn.primary:hover{filter:brightness(1.06)}
   select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:5px 8px}
 
-  main{display:grid;grid-template-columns:300px 1fr 330px;min-height:0}
+  main{display:grid;grid-template-columns:320px 1fr 330px;min-height:0}
   .pane{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);background:var(--panel)}
   .pane:last-child{border-right:none;border-left:1px solid var(--line)}
   .pane .head{padding:9px 14px 7px;border-bottom:1px solid var(--line)}
   .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
   .pane .body{overflow:auto;padding:12px 14px;flex:1}
 
-  /* canvas */
-  .canvas-wrap{position:relative;min-width:0;background:var(--bg)}
-  svg#canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
-  svg#canvas.panning{cursor:grabbing}
+  .canvas-wrap{position:relative;min-width:0;background:var(--canvasbg);overflow:hidden}
+  canvas#gl{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+  canvas#gl.dragging{cursor:grabbing}
+  #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  .lenlabel{position:absolute;transform:translate(-50%,-150%);font-family:var(--mono);font-size:11px;color:var(--ink);
+    background:color-mix(in srgb,var(--panel) 82%,transparent);border:1px solid var(--line);border-radius:5px;padding:0 5px;white-space:nowrap}
   .zoombar{position:absolute;right:12px;bottom:12px;display:flex;gap:6px}
-  .hint{position:absolute;left:12px;bottom:12px;font-size:12px;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 9px;box-shadow:var(--shadow)}
+  .hint{position:absolute;left:12px;bottom:12px;font-size:12px;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 9px;box-shadow:var(--shadow);max-width:60%}
 
-  .port-dot{fill:var(--accent);stroke:var(--panel);stroke-width:2;cursor:pointer}
-  .port-halo{fill:none;stroke:var(--accent);opacity:.55;pointer-events:none;animation:pulse 1.6s ease-out infinite}
-  @keyframes pulse{0%{stroke-width:2;r:8;opacity:.55}100%{stroke-width:.5;r:16;opacity:0}}
-  @media (prefers-reduced-motion: reduce){.port-halo{animation:none;opacity:.3}}
-  .port-dot.sel{stroke:var(--ink);stroke-width:2.5}
-  .hit{stroke:transparent;fill:none;cursor:pointer}
-  .node-sel{stroke:var(--accent);stroke-dasharray:4 3;fill:none;opacity:.9}
-  .lenlabel{font-family:var(--mono);font-size:10.5px;fill:var(--mut)}
-  .jointtick{stroke:var(--mut);opacity:.75}
-
-  /* attach panel cards */
   .ctx{font-size:12.5px;color:var(--mut);margin:0 0 10px}
   .ctx b{color:var(--ink)}
   .grouph{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin:14px 0 6px}
   .grouph:first-child{margin-top:0}
-  .card{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:7px;background:var(--panel)}
+  .card{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:7px;background:var(--panel);display:flex;gap:10px}
+  .card .thumb{width:56px;height:56px;flex:none;border:1px solid var(--line);border-radius:6px;background:var(--panel2);object-fit:cover}
+  .card .ct{flex:1;min-width:0}
   .card .nm{font-weight:600;font-size:13px}
   .card .store{font-size:11.5px;color:var(--mut);margin-top:1px}
   .card .row{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap}
   .price{font-family:var(--mono);font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
-  .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:5px;border:1px solid rgba(0,0,0,.2)}
+  .chain{font-size:11.5px;margin-top:4px;color:var(--ok)}
+  .chain b{font-weight:600}
   .mini{border:1px solid var(--line);background:var(--panel2);border-radius:6px;padding:3px 10px;cursor:pointer;font-size:12.5px}
   .mini:hover{border-color:var(--accent)}
   .mini.add{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
@@ -100,12 +92,10 @@
   .startcard:hover{border-color:var(--accent)}
   .dangerbtn{color:var(--warn);border-color:var(--warn)}
 
-  /* joints legend */
   details.joint{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin-bottom:6px;font-size:12.5px}
   details.joint summary{cursor:pointer;font-weight:600;font-size:12.5px}
   details.joint p{margin:6px 0 2px;color:var(--mut)}
 
-  /* BOM */
   table.bom{width:100%;border-collapse:collapse;font-size:12.5px}
   table.bom td{padding:4px 2px;border-bottom:1px solid var(--line);vertical-align:top}
   table.bom td.r{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -116,6 +106,7 @@
   .jsum{font-size:12px;color:var(--mut);margin:8px 0}
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:var(--ink);color:var(--bg);padding:7px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
   .toast.show{opacity:1}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:5px;border:1px solid rgba(0,0,0,.2)}
 
   @media (max-width: 980px){
     .app{height:auto;min-height:100vh}
@@ -128,13 +119,13 @@
 
 <div class="app">
 <header>
-  <h1>Pipe Play <span>· Malaysian pipe combination builder</span></h1>
+  <h1>Pipe Play <span>· Malaysian pipe combination builder — 3D</span></h1>
   <div class="spacer"></div>
   <select id="examples" aria-label="Load an example">
     <option value="">Examples…</option>
-    <option value="garden">Extend a garden tap (PVC)</option>
+    <option value="garden">Extend a garden tap (PVC standpipe)</option>
     <option value="tank">Tank → outdoor tap (HDPE run)</option>
-    <option value="tee">Two taps from one point (PVC tee)</option>
+    <option value="tee">Two taps from one point (riser branch)</option>
   </select>
   <button class="btn" id="undo" title="Undo last step">Undo</button>
   <button class="btn" id="save">Save</button>
@@ -149,20 +140,9 @@
   </section>
 
   <section class="canvas-wrap">
-    <svg id="canvas" role="img" aria-label="Pipe assembly canvas">
-      <defs>
-        <pattern id="grid" width="43.3" height="25" patternUnits="userSpaceOnUse">
-          <path d="M0 0 L43.3 25 M0 25 L43.3 0" fill="none" stroke="var(--grid)" stroke-width="1"/>
-        </pattern>
-        <pattern id="grid5" width="216.5" height="125" patternUnits="userSpaceOnUse">
-          <rect width="216.5" height="125" fill="url(#grid)"/>
-          <path d="M0 0 L216.5 125 M0 125 L216.5 0" fill="none" stroke="var(--grid2)" stroke-width="1"/>
-        </pattern>
-      </defs>
-      <rect id="gridrect" x="-5000" y="-5000" width="10000" height="10000" fill="url(#grid5)"/>
-      <g id="world"></g>
-    </svg>
-    <div class="hint" id="hint">Click an orange dot to attach parts · elbows &amp; tees can turn ↑ up and ↓ down · drag to pan, scroll to zoom</div>
+    <canvas id="gl"></canvas>
+    <div id="labels"></div>
+    <div class="hint" id="hint">Drag to orbit · scroll to zoom · Shift-drag to pan · click an <b>orange ball</b> to attach parts</div>
     <div class="zoombar">
       <button class="btn" id="zin" aria-label="Zoom in">+</button>
       <button class="btn" id="zout" aria-label="Zoom out">−</button>
@@ -186,7 +166,6 @@
 "use strict";
 /* ================= catalog ================= */
 const SZL = {"12":"½″","34":"¾″","1":"1″"};
-const M2PX = 50;
 
 const SYS = {
   pvc:  {label:"PVC (uPVC, grey)", color:"#9AA3AB", fit:"#79838C", sizes:["12","34","1"],
@@ -208,7 +187,6 @@ const SYS = {
   brass:{label:"Brass / tap", color:"#B08A3E", fit:"#B08A3E", sizes:[]}
 };
 
-/* port spec constructors */
 const sock=(sz)=>({t:"sock",sz}), thm=(sz)=>({t:"thm",sz}), thf=(sz)=>({t:"thf",sz});
 const comp=(sz)=>({t:"comp",sz}), bcomp=(sz)=>({t:"bcomp",sz}), fus=(sz)=>({t:"fus",sz});
 
@@ -261,7 +239,6 @@ const METHODS = {
   "fusion":{name:"PPR heat fusion",how:"Needs a PPR welding iron (kedai rents ~RM20–40/day). Heat pipe and fitting on the iron ~5 s, push together, hold still 15 s. Permanent, very strong."}
 };
 
-/* fittings */
 const DEFS=[];
 function def(id,sys,name,store,price,ports,geo,note){DEFS.push({id,sys,name,store,price,ports,geo,note});}
 const T3=["12","34","1"];
@@ -284,6 +261,7 @@ for(const s of T3){const L=SZL[s];
 for(const [b,sm] of [["34","12"],["1","34"],["1","12"]]){
   def("pvc-red-"+b+"-"+sm,"pvc","PVC reducing socket "+SZL[b]+"→"+SZL[sm],"Soket reducer PVC "+SZL[b]+"×"+SZL[sm],1.8,[sock(b),sock(sm)],"inline","Steps PVC down a size.");
   def("gi-bush-"+b+"-"+sm,"gi","GI reducing bush "+SZL[b]+"→"+SZL[sm],"Bush GI "+SZL[b]+"×"+SZL[sm],3,[thm(b),thf(sm)],"inline","Male "+SZL[b]+" outside, female "+SZL[sm]+" inside — steps a thread down a size.");
+  def("gi-rsock-"+b+"-"+sm,"gi","GI reducing socket "+SZL[b]+"×"+SZL[sm],"Soket reducer GI "+SZL[b]+"×"+SZL[sm],3.5,[thf(b),thf(sm)],"inline","Female both ends, two different sizes — joins a small male thread to a big one.");
 }
 for(const s of SYS.hdpe.sizes){const t=SYS.hdpe.thread[s];
   def("hd-coup-"+s,"hdpe","HDPE compression coupler "+s+"mm","Coupler poly "+s+"mm",{ "20":5,"25":7,"32":10}[s],[comp(s),comp(s)],"inline");
@@ -313,6 +291,7 @@ for(const s of SYS.ppr.sizes){const t=SYS.ppr.thread[s];
 def("tap-bib","brass","Bib tap ½″ (garden/wall tap)","Pili bib tap ½″",12,[thm("12")],"end","Standard Malaysian wall tap. Its male thread screws into any ½″ female port.");
 def("tap-ball","brass","Ball bib tap ½″ (quarter-turn)","Pili ball bib ½″ stainless",22,[thm("12")],"end","Smoother quarter-turn tap; same ½″ male inlet.");
 const DEFBY = Object.fromEntries(DEFS.map(d=>[d.id,d]));
+const INLINES = DEFS.filter(d=>d.geo==="inline").sort((a,b)=>a.price-b.price);
 
 const STARTS = {
   wallf:{name:"Existing wall point — ½″ female thread",store:"(what most Malaysian homes have at a tap point)",port:thf("12"),
@@ -322,13 +301,42 @@ const STARTS = {
   free: {name:"Free start — begin with any pipe",store:"(plan a run on its own)",port:{t:"free"},note:""}
 };
 
+/* ============ "what do you want to combine this with?" ============
+   BFS through straight (inline) fittings: from the open connection spec to a
+   spec that accepts the target pipe. Returns the fittings that go in the middle. */
+function specKey(sp){return sp.t+"|"+(sp.sz||"")+"|"+(sp.sys||"");}
+function chainTo(A,sys,sz){
+  const goalSpec=pipeEndSpec(sys,sz);
+  if(match(A,goalSpec)) return {defs:[],cost:0};
+  let frontier=[{s:A,path:[]}];
+  const seen=new Set([specKey(A)]);
+  for(let depth=0;depth<3;depth++){
+    const next=[];
+    for(const st of frontier){
+      for(const f of INLINES){
+        for(let i=0;i<2;i++){
+          if(!match(st.s,f.ports[i])) continue;
+          const ns=f.ports[1-i], k=specKey(ns);
+          if(seen.has(k)) continue;
+          seen.add(k);
+          const path=st.path.concat([{def:f,via:i}]);
+          if(match(ns,goalSpec)) return {defs:path,cost:path.reduce((t,p)=>t+p.def.price,0)};
+          next.push({s:ns,path});
+        }
+      }
+    }
+    frontier=next;
+  }
+  return null;
+}
+
 /* ================= state ================= */
 let root=null, nid=0, selPort=null, selNode=null, undoStack=[];
 const $=id=>document.getElementById(id);
 
 function mkNode(kind,data,meta){return {id:++nid,kind,data,meta:meta||{},children:{},parent:null,parentPort:null,joint:null,via:0};}
 
-function portsOf(n){ // [{key,spec}]
+function portsOf(n){
   if(n.kind==="start") return [{key:0,spec:STARTS[n.data].port}];
   if(n.kind==="pipe") return [{key:0,spec:pipeEndSpec(n.data.sys,n.data.sz)}];
   const d=DEFBY[n.data];
@@ -338,8 +346,7 @@ function portsOf(n){ // [{key,spec}]
   else rest.forEach(p=>out.push({key:p.i,spec:p.sp}));
   return out;
 }
-function attach(parent,portKey,child){
-  pushUndo();
+function attach(parent,portKey,child){ // note: caller is responsible for pushUndo()
   child.parent=parent; child.parentPort=portKey;
   parent.children[portKey]=child;
   const psp = portsOf(parent).find(p=>p.key===portKey).spec;
@@ -373,57 +380,48 @@ function build(o){
   return n;
 }
 
-/* ================= 3D layout (isometric) =================
-   World is true 3D: x/y horizontal, z up. Directions:
-   0 E [1,0,0]  1 S [0,1,0]  2 W [-1,0,0]  3 N [0,-1,0]  4 UP [0,0,1]  5 DOWN [0,0,-1] */
+/* ================= 3D layout (meters, z-up) ================= */
 const DIRV=[[1,0,0],[0,1,0],[-1,0,0],[0,-1,0],[0,0,1],[0,0,-1]];
 const OPP=d=>d<4?(d+2)%4:(d===4?5:4);
 const PERPS=d=>d<4?[(d+3)%4,(d+1)%4,4,5]:[0,1,2,3];
-const DIRNAME=["↘ ahead-right","↙ ahead-left","↖ back-left","↗ back-right","↑ up","↓ down"];
-const ISOX=Math.cos(Math.PI/6), ISOY=Math.sin(Math.PI/6);
-const S3=p=>[(p[0]-p[1])*ISOX,(p[0]+p[1])*ISOY-p[2]];
-function dirScreen(d){const v=DIRV[d],a=S3([0,0,0]),b=S3(v);let dx=b[0]-a[0],dy=b[1]-a[1];const l=Math.hypot(dx,dy);return [dx/l,dy/l];}
-function shade(hex,f){
-  if(f>=1||!hex.startsWith("#")) return hex;
-  const n=parseInt(hex.slice(1),16);
-  return `rgb(${Math.round(((n>>16)&255)*f)},${Math.round(((n>>8)&255)*f)},${Math.round((n&255)*f)})`;
+function dirLabels(dIn){
+  return dIn<4 ? ["⟲ left","⟳ right","↑ up","↓ down"] : ["East","South","West","North"];
 }
-const axisF=d=>d<4?(d%2===0?1:.88):.76;
-function widthFor(sp){
-  const map={"12":8,"34":10,"1":12,"16":7,"20":8,"25":10,"32":12};
-  return map[sp.sz]||9;
-}
+const RAD={"12":.030,"34":.036,"1":.042,"16":.026,"20":.030,"25":.036,"32":.042};
+const radOf=sz=>RAD[sz]||.032;
+const FIT_LEN=.14, END_LEN=.09, ELB_ARM=.10, TEE_RUN=.24, TEE_BR=.13;
+
 function layout(n,p0,dIn,out){
   n._p0=p0; n._d=dIn;
   const pos=(p,d,len)=>[p[0]+DIRV[d][0]*len,p[1]+DIRV[d][1]*len,p[2]+DIRV[d][2]*len];
-  let exits=[]; // {key,spec,pos,dir}
+  let exits=[];
   if(n.kind==="start"){
     out.shapes.push({t:"start",n,p:p0,d:dIn});
     exits=[{key:0,spec:STARTS[n.data].port,pos:p0,dir:dIn}];
   } else if(n.kind==="pipe"){
-    const px=Math.max(30,Math.min(340,n.meta.L*M2PX));
-    const p1=pos(p0,dIn,px);
+    const len=Math.max(.12,n.meta.L);
+    const p1=pos(p0,dIn,len);
     out.shapes.push({t:"pipe",n,a:p0,b:p1,d:dIn});
-    out.labels.push({a:p0,b:p1,w:widthFor({sz:n.data.sz}),txt:n.meta.L+" m"+(dIn===4?" ↑":dIn===5?" ↓":"")});
+    out.labels.push({a:p0,b:p1,txt:n.meta.L+" m"+(dIn===4?" ↑":dIn===5?" ↓":"")});
     exits=[{key:0,spec:pipeEndSpec(n.data.sys,n.data.sz),pos:p1,dir:dIn}];
   } else {
     const d=DEFBY[n.data];
     if(d.geo==="inline"||d.geo==="end"){
-      const len=d.geo==="end"?16:26;
+      const len=d.geo==="end"?END_LEN:FIT_LEN;
       const p1=pos(p0,dIn,len);
       out.shapes.push({t:d.geo==="end"?"endfit":"inline",n,a:p0,b:p1,d:dIn,def:d});
       if(d.geo==="inline"){ const other=d.ports.map((sp,i)=>i).find(i=>i!==n.via); exits=[{key:other,spec:d.ports[other],pos:p1,dir:dIn}]; }
     } else if(d.geo==="elbow"){
       let nd=n.meta.out;
       if(nd==null||nd===dIn||nd===OPP(dIn)) nd=PERPS(dIn)[0];
-      const c=pos(p0,dIn,16), e=pos(c,nd,16);
+      const c=pos(p0,dIn,ELB_ARM), e=pos(c,nd,ELB_ARM);
       out.shapes.push({t:"elbow",n,a:p0,c,b:e,d:dIn,def:d});
       const other=n.via===0?1:0;
       exits=[{key:other,spec:d.ports[other],pos:e,dir:nd}];
     } else if(d.geo==="tee"){
       let bd=n.meta.branch;
       if(bd==null||bd===dIn||bd===OPP(dIn)) bd=PERPS(dIn)[0];
-      const r=pos(p0,dIn,40), m=pos(p0,dIn,20), b=pos(m,bd,18);
+      const r=pos(p0,dIn,TEE_RUN), m=pos(p0,dIn,TEE_RUN/2), b=pos(m,bd,TEE_BR);
       out.shapes.push({t:"tee",n,a:p0,b:r,m,bp:b,d:dIn,def:d});
       const ps=portsOf(n);
       exits=[{key:ps[0].key,spec:ps[0].spec,pos:r,dir:dIn},{key:ps[1].key,spec:ps[1].spec,pos:b,dir:bd}];
@@ -437,168 +435,496 @@ function layout(n,p0,dIn,out){
   }
 }
 
-let view={x:0,y:0,k:1};
-function svgEl(tag,attrs){const e=document.createElementNS("http://www.w3.org/2000/svg",tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;}
-function render(){
-  const world=$("world"); world.innerHTML="";
-  world.setAttribute("transform",`translate(${view.x},${view.y}) scale(${view.k})`);
-  if(!root){ renderPanels(); return; }
-  const out={shapes:[],ports:[],labels:[]};
-  layout(root,[0,0,0],0,out);
-  // keep the selected port in sync with fresh layout (positions/dirs recomputed each render)
-  if(selPort){
-    const f=out.ports.find(p=>p.node===selPort.node&&p.key===selPort.key);
-    selPort=f||null;
+/* ================= tiny math ================= */
+const V={
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  scl:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+  len:a=>Math.hypot(a[0],a[1],a[2]),
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];}
+};
+function m4mul(a,b){
+  const o=new Array(16);
+  for(let c=0;c<4;c++)for(let r=0;r<4;r++){
+    let s=0;for(let k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;
   }
-  const line=(a,b,w,color,cap)=>svgEl("line",{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:color,"stroke-width":w,"stroke-linecap":cap||"round"});
-  const PKEYS=["a","b","c","p","m","bp"];
-  const segsOf=s=>{
-    if(s.t==="pipe"||s.t==="inline"||s.t==="endfit") return [[s.a,s.b]];
-    if(s.t==="elbow") return [[s.a,s.c],[s.c,s.b]];
-    if(s.t==="tee") return [[s.a,s.b],[s.m,s.bp]];
-    return [];
-  };
-  // floor = lowest point in the assembly (so shadows read as "height above floor")
-  let floorZ=0;
-  for(const s of out.shapes) for(const k of PKEYS) if(s[k]) floorZ=Math.min(floorZ,s[k][2]);
-  // ground shadows first (only for parts above the floor)
-  for(const s of out.shapes) for(const [A,B] of segsOf(s)){
-    if(A[2]-floorZ<0.02&&B[2]-floorZ<0.02) continue;
-    const pa=S3([A[0],A[1],floorZ]),pb=S3([B[0],B[1],floorZ]);
-    const w=s.t==="pipe"?widthFor({sz:s.n.data.sz}):widthFor(s.def.ports[0])+3;
-    if(Math.hypot(pb[0]-pa[0],pb[1]-pa[1])<3)
-      world.appendChild(svgEl("circle",{cx:pa[0],cy:pa[1],r:w*.45,fill:"var(--shadowline)"}));
-    else world.appendChild(line(pa,pb,w*.8,"var(--shadowline)"));
-  }
-  // painter's order: draw far (small x+y+z) before near
-  const depth=s=>{let t=0,c=0;for(const k of PKEYS)if(s[k]){t+=s[k][0]+s[k][1]+s[k][2];c++;}return t/c;};
-  out.shapes.sort((x,y)=>depth(x)-depth(y));
-  for(const s of out.shapes){
-    const pj={}; for(const k of PKEYS) if(s[k]) pj[k]=S3(s[k]);
-    const g=svgEl("g",{});
-    let title="", hitShape=null;
-    if(s.t==="start"){
-      const st=STARTS[s.n.data]; title=st.name;
-      const P=pj.p;
-      if(s.n.data==="tank"){
-        g.appendChild(svgEl("rect",{x:P[0]-58,y:P[1]-42,width:52,height:70,rx:8,fill:"var(--panel2)",stroke:"var(--mut)","stroke-width":2.5}));
-        g.appendChild(svgEl("line",{x1:P[0]-52,y1:P[1]-22,x2:P[0]-12,y2:P[1]-22,stroke:"#2E7BD6","stroke-width":2,opacity:.7}));
-        g.appendChild(line([P[0]-8,P[1]],[P[0]+8,P[1]],10,"var(--mut)","butt"));
-      } else if(s.n.data==="free"){
-        g.appendChild(svgEl("circle",{cx:P[0],cy:P[1],r:12,fill:"none",stroke:"var(--mut)","stroke-width":2,"stroke-dasharray":"4 3"}));
-      } else {
-        const wall=svgEl("line",{x1:P[0]-4,y1:P[1]-22,x2:P[0]-4,y2:P[1]+22,stroke:"var(--mut)","stroke-width":7,"stroke-linecap":"round",opacity:.8});
-        g.appendChild(wall);
-        for(let i=-2;i<3;i++) g.appendChild(svgEl("line",{x1:P[0]-8,y1:P[1]+i*9-2,x2:P[0]-14,y2:P[1]+i*9+5,stroke:"var(--mut)","stroke-width":1.6,opacity:.6}));
-        g.appendChild(line(P,[P[0]+8,P[1]],10,"var(--mut)","butt"));
-      }
-      hitShape=svgEl("circle",{cx:P[0],cy:P[1],r:24,class:"hit"});
-    } else if(s.t==="pipe"){
-      const sys=SYS[s.n.data.sys], w=widthFor({sz:s.n.data.sz}), f=axisF(s.d);
-      title=sys.label+" "+sys.szl(s.n.data.sz)+" — "+s.n.meta.L+" m";
-      g.appendChild(line(pj.a,pj.b,w+2,"rgba(0,0,0,.28)"));
-      g.appendChild(line(pj.a,pj.b,w,shade(sys.color,f)));
-      if(s.n.data.sys==="hdpe") g.appendChild(line(pj.a,pj.b,1.6,"#2E7BD6"));
-      if(s.n.data.sys==="palpe") g.appendChild(line(pj.a,pj.b,1.2,"#9AA3AB"));
-      if(s.n.data.sys==="gi"){ // thread ticks at ends
-        const dd=dirScreen(s.d), pv=[-dd[1],dd[0]];
-        for(const p of [pj.a,pj.b]){
-          const sign=(p===pj.a?1:-1);
-          for(let i=1;i<=3;i++){
-            const cx=p[0]+dd[0]*i*3*sign, cy=p[1]+dd[1]*i*3*sign;
-            g.appendChild(svgEl("line",{x1:cx-pv[0]*(w/2),y1:cy-pv[1]*(w/2),x2:cx+pv[0]*(w/2),y2:cy+pv[1]*(w/2),stroke:"rgba(0,0,0,.35)","stroke-width":1}));
-          }
-        }
-      }
-      hitShape=line(pj.a,pj.b,w+14,"transparent"); hitShape.setAttribute("class","hit");
-    } else if(s.t==="inline"||s.t==="endfit"){
-      const d=s.def, sys=SYS[d.sys], w=widthFor(d.ports[0])+5, fc=shade(sys.fit,axisF(s.d));
-      title=d.name;
-      g.appendChild(line(pj.a,pj.b,w+2,"rgba(0,0,0,.3)","butt"));
-      g.appendChild(line(pj.a,pj.b,w,fc,"butt"));
-      if(d.id.startsWith("tap")){
-        const b=pj.b;
-        g.appendChild(svgEl("circle",{cx:b[0],cy:b[1]-14,r:5,fill:"none",stroke:sys.fit,"stroke-width":3}));
-        g.appendChild(svgEl("line",{x1:b[0],y1:b[1]-9,x2:b[0],y2:b[1],stroke:sys.fit,"stroke-width":3}));
-        g.appendChild(svgEl("line",{x1:b[0],y1:b[1],x2:b[0]+9,y2:b[1]+7,stroke:sys.fit,"stroke-width":3,"stroke-linecap":"round"}));
-      }
-      if(d.id.includes("valve")){
-        const mid=[(pj.a[0]+pj.b[0])/2,(pj.a[1]+pj.b[1])/2];
-        g.appendChild(svgEl("line",{x1:mid[0],y1:mid[1],x2:mid[0],y2:mid[1]-12,stroke:sys.fit,"stroke-width":3}));
-        g.appendChild(svgEl("line",{x1:mid[0]-6,y1:mid[1]-12,x2:mid[0]+6,y2:mid[1]-12,stroke:sys.fit,"stroke-width":3,"stroke-linecap":"round"}));
-      }
-      hitShape=line(pj.a,pj.b,w+12,"transparent"); hitShape.setAttribute("class","hit");
-    } else if(s.t==="elbow"){
-      const d=s.def, sys=SYS[d.sys], w=widthFor(d.ports[0])+5, fc=shade(sys.fit,axisF(s.d));
-      title=d.name;
-      const path=`M ${pj.a[0]} ${pj.a[1]} L ${pj.c[0]} ${pj.c[1]} L ${pj.b[0]} ${pj.b[1]}`;
-      g.appendChild(svgEl("path",{d:path,fill:"none",stroke:"rgba(0,0,0,.3)","stroke-width":w+2,"stroke-linejoin":"round","stroke-linecap":"butt"}));
-      g.appendChild(svgEl("path",{d:path,fill:"none",stroke:fc,"stroke-width":w,"stroke-linejoin":"round","stroke-linecap":"butt"}));
-      hitShape=svgEl("path",{d:path,fill:"none",stroke:"transparent","stroke-width":w+12,class:"hit"});
-    } else if(s.t==="tee"){
-      const d=s.def, sys=SYS[d.sys], w=widthFor(d.ports[0])+5, fc=shade(sys.fit,axisF(s.d));
-      title=d.name;
-      for(const [a,b] of [[pj.a,pj.b],[pj.m,pj.bp]]){
-        g.appendChild(line(a,b,w+2,"rgba(0,0,0,.3)","butt"));
-        g.appendChild(line(a,b,w,fc,"butt"));
-      }
-      hitShape=line(pj.a,pj.b,w+12,"transparent"); hitShape.setAttribute("class","hit");
-    }
-    const t=svgEl("title",{}); t.textContent=title; g.appendChild(t);
-    if(hitShape){
-      hitShape.addEventListener("click",ev=>{ev.stopPropagation();selNode=s.n;selPort=null;renderAll();});
-      g.appendChild(hitShape);
-    }
-    if(selNode===s.n){
-      const pts=PKEYS.filter(k=>pj[k]).map(k=>pj[k]);
-      const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
-      const x=Math.min(...xs)-12,y=Math.min(...ys)-12;
-      g.appendChild(svgEl("rect",{x,y,width:Math.max(...xs)-Math.min(...xs)+24,height:Math.max(...ys)-Math.min(...ys)+24,rx:6,class:"node-sel","stroke-width":1.5}));
-    }
-    world.appendChild(g);
-  }
-  // joint ticks
-  const walk=(n)=>{for(const k in n.children){const c=n.children[k];
-    if(c.joint){const p=S3(c._p0),dd=dirScreen(c._d),pv=[-dd[1],dd[0]];
-      world.appendChild(svgEl("line",{x1:p[0]-pv[0]*9,y1:p[1]-pv[1]*9,x2:p[0]+pv[0]*9,y2:p[1]+pv[1]*9,class:"jointtick","stroke-width":2}));}
-    walk(c);}};
-  walk(root);
-  for(const l of out.labels){
-    const pa=S3(l.a),pb=S3(l.b);
-    let dx=pb[0]-pa[0],dy=pb[1]-pa[1];const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
-    let nx=-dy,ny=dx;
-    if(ny>0.05||(Math.abs(ny)<=0.05&&nx<0)){nx=-nx;ny=-ny;} // keep labels above / to the right
-    const off=l.w/2+13;
-    const t=svgEl("text",{x:(pa[0]+pb[0])/2+nx*off,y:(pa[1]+pb[1])/2+ny*off,class:"lenlabel","text-anchor":"middle"});
-    t.textContent=l.txt; world.appendChild(t);
-  }
-  for(const p of out.ports){
-    const pp=S3(p.pos);
-    const g=svgEl("g",{});
-    const halo=svgEl("circle",{cx:pp[0],cy:pp[1],r:8,class:"port-halo"});
-    const dot=svgEl("circle",{cx:pp[0],cy:pp[1],r:7,class:"port-dot"+(selPort&&selPort.node===p.node&&selPort.key===p.key?" sel":"")});
-    const t=svgEl("title",{}); t.textContent="Open: "+specLabel(p.spec)+" — click to attach";
-    dot.appendChild(t);
-    dot.addEventListener("click",ev=>{ev.stopPropagation();selPort=p;selNode=null;renderAll();});
-    g.appendChild(halo);g.appendChild(dot);world.appendChild(g);
-  }
-  window._ports=out.ports;
-  renderPanels();
+  return o;
 }
-function renderAll(){render();}
+function m4persp(fov,asp,n,f){
+  const t=1/Math.tan(fov/2);
+  return [t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0];
+}
+function m4look(eye,ctr,up){
+  const z=V.norm(V.sub(eye,ctr)), x=V.norm(V.cross(up,z)), y=V.cross(z,x);
+  return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0,
+          -V.dot(x,eye),-V.dot(y,eye),-V.dot(z,eye),1];
+}
+const M4I=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+const m4ts=(p,s)=>[s,0,0,0, 0,s,0,0, 0,0,s,0, p[0],p[1],p[2],1];
+function hex2rgb(h){const n=parseInt(h.slice(1),16);return [((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255];}
+
+/* ================= mesh builders ================= */
+function pushV(arr,p,n,c,pk){arr.push(p[0],p[1],p[2],n[0],n[1],n[2],c[0],c[1],c[2],pk[0],pk[1],pk[2]);}
+function cylinder(arr,a,b,r,seg,col,pick,capped){
+  const ax=V.norm(V.sub(b,a));
+  let u=Math.abs(ax[2])<0.9?V.norm(V.cross(ax,[0,0,1])):V.norm(V.cross(ax,[1,0,0]));
+  const v=V.cross(ax,u);
+  const ring=[];
+  for(let i=0;i<seg;i++){const ang=2*Math.PI*i/seg;ring.push(V.add(V.scl(u,Math.cos(ang)),V.scl(v,Math.sin(ang))));}
+  for(let i=0;i<seg;i++){
+    const j=(i+1)%seg, di=ring[i], dj=ring[j];
+    const ai=V.add(a,V.scl(di,r)), aj=V.add(a,V.scl(dj,r)), bi=V.add(b,V.scl(di,r)), bj=V.add(b,V.scl(dj,r));
+    pushV(arr,ai,di,col,pick);pushV(arr,bi,di,col,pick);pushV(arr,bj,dj,col,pick);
+    pushV(arr,ai,di,col,pick);pushV(arr,bj,dj,col,pick);pushV(arr,aj,dj,col,pick);
+    if(capped){
+      const na=V.scl(ax,-1);
+      pushV(arr,a,na,col,pick);pushV(arr,aj,na,col,pick);pushV(arr,ai,na,col,pick);
+      pushV(arr,b,ax,col,pick);pushV(arr,bi,ax,col,pick);pushV(arr,bj,ax,col,pick);
+    }
+  }
+}
+function sphere(arr,c,r,col,pick,st,sl){
+  st=st||8;sl=sl||12;
+  const pt=(i,j)=>{const th=Math.PI*i/st,ph=2*Math.PI*j/sl;
+    return [Math.sin(th)*Math.cos(ph),Math.sin(th)*Math.sin(ph),Math.cos(th)];};
+  for(let i=0;i<st;i++)for(let j=0;j<sl;j++){
+    const n00=pt(i,j),n01=pt(i,j+1),n10=pt(i+1,j),n11=pt(i+1,j+1);
+    const p=(n)=>V.add(c,V.scl(n,r));
+    pushV(arr,p(n00),n00,col,pick);pushV(arr,p(n10),n10,col,pick);pushV(arr,p(n11),n11,col,pick);
+    pushV(arr,p(n00),n00,col,pick);pushV(arr,p(n11),n11,col,pick);pushV(arr,p(n01),n01,col,pick);
+  }
+}
+function box(arr,c,s,col,pick){
+  const h=[s[0]/2,s[1]/2,s[2]/2];
+  const faces=[
+    [[1,0,0],[0,1,0],[0,0,1]],[[-1,0,0],[0,-1,0],[0,0,1]],
+    [[0,1,0],[0,0,1],[1,0,0]],[[0,-1,0],[0,0,-1],[1,0,0]],
+    [[0,0,1],[1,0,0],[0,1,0]],[[0,0,-1],[-1,0,0],[0,1,0]]
+  ];
+  for(const [n,u,v] of faces){
+    const N=[n[0],n[1],n[2]];
+    const ctr=V.add(c,[n[0]*h[0],n[1]*h[1],n[2]*h[2]]);
+    const U=[u[0]*h[0],u[1]*h[1],u[2]*h[2]], W=[v[0]*h[0],v[1]*h[1],v[2]*h[2]];
+    const p1=V.add(V.add(ctr,U),W),p2=V.sub(V.add(ctr,W),U),p3=V.sub(V.sub(ctr,U),W),p4=V.add(V.sub(ctr,W),U);
+    pushV(arr,p1,N,col,pick);pushV(arr,p2,N,col,pick);pushV(arr,p3,N,col,pick);
+    pushV(arr,p1,N,col,pick);pushV(arr,p3,N,col,pick);pushV(arr,p4,N,col,pick);
+  }
+}
+const GOLD=hex2rgb("#B08A3E");
+function meshForShape(arr,s,pick){
+  const dirv=d=>DIRV[d];
+  if(s.t==="pipe"){
+    const sys=SYS[s.n.data.sys], r=radOf(s.n.data.sz), col=hex2rgb(sys.color);
+    cylinder(arr,s.a,s.b,r,18,col,pick,true);
+    if(s.n.data.sys==="hdpe"){ // blue stripe: thin raised strip
+      const off=V.scl([0,0,1],r*0.92);
+      cylinder(arr,V.add(s.a,off),V.add(s.b,off),r*0.16,8,hex2rgb("#2E7BD6"),pick,true);
+    }
+  } else if(s.t==="inline"||s.t==="endfit"){
+    const d=s.def, sys=SYS[d.sys], r=radOf(d.ports[0].sz)*1.35, col=hex2rgb(sys.fit);
+    const seg=(d.sys==="hdpe"||d.sys==="palpe")?6:16; // hex nuts for compression
+    cylinder(arr,s.a,s.b,r,16,col,pick,true);
+    const ax=V.norm(V.sub(s.b,s.a));
+    cylinder(arr,s.a,V.add(s.a,V.scl(ax,.025)),r*1.22,seg,col,pick,true);
+    if(s.t==="inline") cylinder(arr,V.sub(s.b,V.scl(ax,.025)),s.b,r*1.22,seg,col,pick,true);
+    else sphere(arr,s.b,r*0.95,col,pick);
+    const mid=V.scl(V.add(s.a,s.b),0.5);
+    if(d.id.startsWith("tap")){
+      const top=V.add(s.b,[0,0,.075]);
+      cylinder(arr,s.b,top,.016,10,GOLD,pick,true);                       // riser body
+      const sd=dirv(s.d<4?s.d:0);
+      const sp=V.add(top,V.scl(sd,.075));
+      cylinder(arr,top,sp,.013,10,GOLD,pick,true);                        // spout
+      cylinder(arr,sp,V.add(sp,[0,0,-.035]),.011,10,GOLD,pick,true);      // spout drop
+      const h1=V.add(top,[0,0,.02]);
+      cylinder(arr,V.sub(h1,V.scl(sd,.03)),V.add(h1,V.scl(sd,.03)),.008,8,GOLD,pick,true); // handle
+      sphere(arr,V.add(top,[0,0,.02]),.014,GOLD,pick);
+    }
+    if(d.id.includes("valve")){
+      const stem=V.add(mid,[0,0,.055]);
+      cylinder(arr,mid,stem,.012,10,col,pick,true);
+      cylinder(arr,stem,V.add(stem,[0,0,.014]),.042,16,hex2rgb("#8A2F2A"),pick,true); // wheel
+    }
+  } else if(s.t==="elbow"){
+    const d=s.def, sys=SYS[d.sys], r=radOf(d.ports[0].sz)*1.35, col=hex2rgb(sys.fit);
+    cylinder(arr,s.a,s.c,r,14,col,pick,true);
+    cylinder(arr,s.c,s.b,r,14,col,pick,true);
+    sphere(arr,s.c,r*1.02,col,pick);
+  } else if(s.t==="tee"){
+    const d=s.def, sys=SYS[d.sys], r=radOf(d.ports[0].sz)*1.35, col=hex2rgb(sys.fit);
+    cylinder(arr,s.a,s.b,r,14,col,pick,true);
+    cylinder(arr,s.m,s.bp,r,14,col,pick,true);
+    sphere(arr,s.m,r*1.02,col,pick);
+  } else if(s.t==="start"){
+    const grey=hex2rgb("#8A939B");
+    if(s.n.data==="tank"){
+      const c=V.add(s.p,V.scl(dirv(OPP(s.d)),.33));
+      cylinder(arr,V.add(c,[0,0,-.10]),V.add(c,[0,0,.52]),.28,20,hex2rgb("#D8D5CB"),pick,true);
+      cylinder(arr,V.add(c,[0,0,.52]),V.add(c,[0,0,.57]),.30,20,hex2rgb("#2E5E8C"),pick,true); // lid
+      cylinder(arr,V.sub(s.p,V.scl(dirv(s.d),.06)),s.p,.03,10,grey,pick,true);
+    } else if(s.n.data==="free"){
+      sphere(arr,s.p,.028,grey,pick);
+    } else {
+      const back=V.scl(dirv(OPP(s.d)),.03);
+      box(arr,V.add(s.p,back),[.06,.5,.5],hex2rgb("#B9B4A6"),pick);
+      cylinder(arr,s.p,V.add(s.p,V.scl(dirv(s.d),.05)),.028,12,grey,pick,true);
+    }
+  }
+}
+
+/* ================= WebGL engine ================= */
+const VSHADER=`
+attribute vec3 aPos;attribute vec3 aNrm;attribute vec3 aCol;attribute vec3 aPick;
+uniform mat4 uVP;uniform mat4 uModel;
+varying vec3 vN;varying vec3 vC;varying vec3 vP;varying vec3 vW;
+void main(){vec4 w=uModel*vec4(aPos,1.0);gl_Position=uVP*w;vW=w.xyz;
+vN=mat3(uModel[0].xyz,uModel[1].xyz,uModel[2].xyz)*aNrm;vC=aCol;vP=aPick;}`;
+const FSHADER=`
+precision mediump float;
+varying vec3 vN;varying vec3 vC;varying vec3 vP;varying vec3 vW;
+uniform float uMode;uniform float uUni;uniform vec3 uColor;uniform vec3 uPick;uniform vec3 uEye;
+void main(){
+ vec3 pick=mix(vP,uPick,uUni);
+ if(uMode>0.5){gl_FragColor=vec4(pick,1.0);return;}
+ vec3 col=mix(vC,uColor,uUni);
+ vec3 n=normalize(vN);
+ vec3 l=normalize(vec3(0.45,-0.35,0.82));
+ float d=max(dot(n,l),0.0);
+ vec3 v=normalize(uEye-vW);
+ vec3 h=normalize(l+v);
+ float sp=pow(max(dot(n,h),0.0),36.0)*0.22;
+ float d2=max(dot(n,normalize(vec3(-0.5,0.6,0.3))),0.0)*0.18;
+ gl_FragColor=vec4(col*(0.40+0.60*d+d2)+vec3(sp),1.0);
+}`;
+const LVS=`attribute vec3 aPos;attribute vec3 aCol;uniform mat4 uVP;varying vec3 vC;
+void main(){gl_Position=uVP*vec4(aPos,1.0);vC=aCol;}`;
+const LFS=`precision mediump float;varying vec3 vC;void main(){gl_FragColor=vec4(vC,1.0);}`;
+
+function makeProgram(gl,vs,fs){
+  const sh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;};
+  const p=gl.createProgram();
+  gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+function makeEngine(canvas,opts){
+  const gl=canvas.getContext("webgl",{antialias:true,preserveDrawingBuffer:!!(opts&&opts.preserve),alpha:!!(opts&&opts.alpha)});
+  if(!gl) return null;
+  const prog=makeProgram(gl,VSHADER,FSHADER);
+  const lprog=makeProgram(gl,LVS,LFS);
+  const A={pos:gl.getAttribLocation(prog,"aPos"),nrm:gl.getAttribLocation(prog,"aNrm"),
+           col:gl.getAttribLocation(prog,"aCol"),pick:gl.getAttribLocation(prog,"aPick")};
+  const U={vp:gl.getUniformLocation(prog,"uVP"),model:gl.getUniformLocation(prog,"uModel"),
+           mode:gl.getUniformLocation(prog,"uMode"),uni:gl.getUniformLocation(prog,"uUni"),
+           color:gl.getUniformLocation(prog,"uColor"),pick:gl.getUniformLocation(prog,"uPick"),
+           eye:gl.getUniformLocation(prog,"uEye")};
+  const LA={pos:gl.getAttribLocation(lprog,"aPos"),col:gl.getAttribLocation(lprog,"aCol")};
+  const LU={vp:gl.getUniformLocation(lprog,"uVP")};
+  gl.enable(gl.DEPTH_TEST);
+  const staticBuf=gl.createBuffer(), lineBuf=gl.createBuffer(), dynBuf=gl.createBuffer();
+  let staticCount=0, lineCount=0, dynCount=0;
+  function setStatic(f32){gl.bindBuffer(gl.ARRAY_BUFFER,staticBuf);gl.bufferData(gl.ARRAY_BUFFER,f32,gl.STATIC_DRAW);staticCount=f32.length/12;}
+  function setLines(f32){gl.bindBuffer(gl.ARRAY_BUFFER,lineBuf);gl.bufferData(gl.ARRAY_BUFFER,f32,gl.STATIC_DRAW);lineCount=f32.length/6;}
+  function setDyn(f32){gl.bindBuffer(gl.ARRAY_BUFFER,dynBuf);gl.bufferData(gl.ARRAY_BUFFER,f32,gl.STATIC_DRAW);dynCount=f32.length/12;}
+  function bindMain(buf){
+    gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    const S=48;
+    gl.enableVertexAttribArray(A.pos);gl.vertexAttribPointer(A.pos,3,gl.FLOAT,false,S,0);
+    gl.enableVertexAttribArray(A.nrm);gl.vertexAttribPointer(A.nrm,3,gl.FLOAT,false,S,12);
+    gl.enableVertexAttribArray(A.col);gl.vertexAttribPointer(A.col,3,gl.FLOAT,false,S,24);
+    gl.enableVertexAttribArray(A.pick);gl.vertexAttribPointer(A.pick,3,gl.FLOAT,false,S,36);
+  }
+  return {gl,prog,lprog,A,U,LA,LU,setStatic,setLines,setDyn,bindMain,
+          buffers:{staticBuf,lineBuf,dynBuf},
+          counts:()=>({staticCount,lineCount,dynCount})};
+}
+
+/* ---- main viewport ---- */
+const canvas=$("gl");
+const ENG=makeEngine(canvas,{});
+const labelsEl=$("labels");
+let cam={yaw:-0.65,pitch:0.42,dist:5,target:[1.2,0,0.2]};
+let lastVP=M4I,lastEye=[0,0,5];
+let pickTable=[null], lastPorts=[], sceneLabels=[], bbox=null;
+let themeColors={bg:[0.93,0.92,0.90],grid:[0.85,0.84,0.81],accent:[0.91,0.38,0.11],ink:[0.13,0.15,0.17]};
+function refreshTheme(){
+  const cs=getComputedStyle(document.documentElement);
+  const get=(v,fb)=>{const s=cs.getPropertyValue(v).trim();
+    if(/^#/.test(s))return hex2rgb(s);
+    const m=s.match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);return m?[+m[1]/255,+m[2]/255,+m[3]/255]:fb;};
+  themeColors={bg:get("--canvasbg",themeColors.bg),grid:get("--gridline",themeColors.grid),
+               accent:get("--accent",themeColors.accent),ink:get("--ink",themeColors.ink)};
+}
+refreshTheme();
+if(window.matchMedia){const mq=window.matchMedia("(prefers-color-scheme: dark)");
+  if(mq.addEventListener)mq.addEventListener("change",refreshTheme);}
+new MutationObserver(refreshTheme).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+
+const encPick=i=>[(i&255)/255,((i>>8)&255)/255,((i>>16)&255)/255];
+const NOPICK=[0,0,0];
+
+/* unit sphere for ports */
+const sphereArr=[];sphere(sphereArr,[0,0,0],1,[1,1,1],[0,0,0],10,14);
+const SPHERE_F32=new Float32Array(sphereArr);
+if(ENG)ENG.setDyn(SPHERE_F32);
+
+function rebuildScene(){
+  if(!ENG)return;
+  pickTable=[null];lastPorts=[];sceneLabels=[];bbox=null;
+  const arr=[];
+  if(root){
+    const out={shapes:[],ports:[],labels:[]};
+    layout(root,[0,0,0],0,out);
+    const nodePick=new Map();
+    for(const s of out.shapes){
+      let id=nodePick.get(s.n);
+      if(id==null){id=pickTable.length;pickTable.push({type:"node",node:s.n});nodePick.set(s.n,id);}
+      meshForShape(arr,s,encPick(id));
+    }
+    for(const p of out.ports){
+      p.pickId=pickTable.length;pickTable.push({type:"port",port:p});
+      lastPorts.push(p);
+    }
+    sceneLabels=out.labels;
+    // bbox
+    let mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
+    const acc=p=>{for(let i=0;i<3;i++){mn[i]=Math.min(mn[i],p[i]);mx[i]=Math.max(mx[i],p[i]);}};
+    for(const s of out.shapes)for(const k of ["a","b","c","p","m","bp"])if(s[k])acc(s[k]);
+    for(const p of out.ports)acc(p.pos);
+    bbox={mn,mx};
+    // reconcile selection with fresh layout
+    if(selPort){
+      const f=lastPorts.find(p=>p.node===selPort.node&&p.key===selPort.key);
+      selPort=f||null;
+    }
+  }
+  ENG.setStatic(new Float32Array(arr));
+  // ground grid at the lowest point
+  const g=[];
+  const floorZ=(bbox?Math.min(0,bbox.mn[2]):0)-0.02;
+  const ext=bbox?Math.max(4,Math.ceil(Math.max(bbox.mx[0]-bbox.mn[0],bbox.mx[1]-bbox.mn[1]))+3):5;
+  const cx=bbox?Math.round((bbox.mn[0]+bbox.mx[0])/2):0, cy=bbox?Math.round((bbox.mn[1]+bbox.mx[1])/2):0;
+  const gc=themeColors.grid;
+  for(let i=-ext;i<=ext;i++){
+    g.push(cx+i,cy-ext,floorZ,gc[0],gc[1],gc[2], cx+i,cy+ext,floorZ,gc[0],gc[1],gc[2]);
+    g.push(cx-ext,cy+i,floorZ,gc[0],gc[1],gc[2], cx+ext,cy+i,floorZ,gc[0],gc[1],gc[2]);
+  }
+  ENG.setLines(new Float32Array(g));
+  // labels overlay
+  labelsEl.innerHTML="";
+  for(const l of sceneLabels){
+    const d=document.createElement("div");d.className="lenlabel";d.textContent=l.txt;
+    l.el=d;labelsEl.appendChild(d);
+  }
+}
+function project(p){
+  const m=lastVP;
+  const x=m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12];
+  const y=m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13];
+  const w=m[3]*p[0]+m[7]*p[1]+m[11]*p[2]+m[15];
+  return [x/w,y/w,w];
+}
+function drawScene(mode){
+  const gl=ENG.gl;
+  const dpr=window.devicePixelRatio||1;
+  const W=canvas.clientWidth,H=canvas.clientHeight;
+  if(canvas.width!==Math.round(W*dpr)||canvas.height!==Math.round(H*dpr)){
+    canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);
+  }
+  gl.viewport(0,0,canvas.width,canvas.height);
+  const eye=[cam.target[0]+cam.dist*Math.cos(cam.pitch)*Math.cos(cam.yaw),
+             cam.target[1]+cam.dist*Math.cos(cam.pitch)*Math.sin(cam.yaw),
+             cam.target[2]+cam.dist*Math.sin(cam.pitch)];
+  const vp=m4mul(m4persp(0.82,W/Math.max(1,H),0.05,200),m4look(eye,cam.target,[0,0,1]));
+  lastVP=vp;lastEye=eye;
+  const bg=themeColors.bg;
+  gl.clearColor(mode?0:bg[0],mode?0:bg[1],mode?0:bg[2],1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const c=ENG.counts();
+  if(!mode&&c.lineCount){
+    gl.useProgram(ENG.lprog);
+    gl.bindBuffer(gl.ARRAY_BUFFER,ENG.buffers.lineBuf);
+    gl.enableVertexAttribArray(ENG.LA.pos);gl.vertexAttribPointer(ENG.LA.pos,3,gl.FLOAT,false,24,0);
+    gl.enableVertexAttribArray(ENG.LA.col);gl.vertexAttribPointer(ENG.LA.col,3,gl.FLOAT,false,24,12);
+    gl.uniformMatrix4fv(ENG.LU.vp,false,vp);
+    gl.drawArrays(gl.LINES,0,c.lineCount);
+  }
+  gl.useProgram(ENG.prog);
+  gl.uniformMatrix4fv(ENG.U.vp,false,vp);
+  gl.uniform3fv(ENG.U.eye,eye);
+  gl.uniform1f(ENG.U.mode,mode?1:0);
+  if(c.staticCount){
+    ENG.bindMain(ENG.buffers.staticBuf);
+    gl.uniformMatrix4fv(ENG.U.model,false,M4I);
+    gl.uniform1f(ENG.U.uni,0);
+    gl.drawArrays(gl.TRIANGLES,0,c.staticCount);
+  }
+  // ports: pulsing orange balls
+  const t=performance.now()/1000;
+  ENG.bindMain(ENG.buffers.dynBuf);
+  gl.uniform1f(ENG.U.uni,1);
+  for(const p of lastPorts){
+    const sel=selPort&&selPort.node===p.node&&selPort.key===p.key;
+    const puls=mode?1:(1+0.14*Math.sin(t*3+p.pickId));
+    const r=mode?.07:(sel?.065:.048)*puls; // pick pass: bigger, steady target
+    gl.uniformMatrix4fv(ENG.U.model,false,m4ts(p.pos,r));
+    gl.uniform3fv(ENG.U.color,sel?themeColors.ink:themeColors.accent);
+    gl.uniform3fv(ENG.U.pick,encPick(p.pickId));
+    gl.drawArrays(gl.TRIANGLES,0,c.dynCount);
+  }
+}
+function frame(){
+  if(ENG){
+    drawScene(0);
+    const W=canvas.clientWidth,H=canvas.clientHeight;
+    for(const l of sceneLabels){
+      if(!l.el)continue;
+      const mid=V.scl(V.add(l.a,l.b),0.5);
+      const pr=project(mid);
+      if(pr[2]<0.05){l.el.style.display="none";continue;}
+      l.el.style.display="";
+      l.el.style.left=((pr[0]+1)/2*W)+"px";
+      l.el.style.top=((1-pr[1])/2*H)+"px";
+    }
+  }
+  requestAnimationFrame(frame);
+}
+function pick(x,y){
+  if(!ENG)return null;
+  drawScene(1);
+  const gl=ENG.gl,dpr=window.devicePixelRatio||1;
+  const px=Math.round(x*dpr),py=Math.round(canvas.height-y*dpr);
+  const buf=new Uint8Array(4);
+  const tryAt=(ox,oy)=>{
+    gl.readPixels(Math.max(0,Math.min(canvas.width-1,px+ox)),Math.max(0,Math.min(canvas.height-1,py+oy)),1,1,gl.RGBA,gl.UNSIGNED_BYTE,buf);
+    const id=buf[0]|(buf[1]<<8)|(buf[2]<<16);
+    return (id>0&&id<pickTable.length)?pickTable[id]:null;
+  };
+  for(const [ox,oy] of [[0,0],[2,0],[-2,0],[0,2],[0,-2],[3,3],[-3,-3],[3,-3],[-3,3]]){
+    const hit=tryAt(ox,oy);
+    if(hit)return hit;
+  }
+  return null;
+}
+function fitView(){
+  if(!bbox){cam.target=[0.6,0,0.2];cam.dist=4;return;}
+  const c=[(bbox.mn[0]+bbox.mx[0])/2,(bbox.mn[1]+bbox.mx[1])/2,(bbox.mn[2]+bbox.mx[2])/2];
+  const r=Math.max(0.6,V.len(V.sub(bbox.mx,bbox.mn))/2);
+  cam.target=c;cam.dist=Math.min(50,r*2.4+0.8);
+}
+
+/* ---- camera controls ---- */
+let drag=null;
+canvas.addEventListener("pointerdown",e=>{
+  canvas.setPointerCapture(e.pointerId);
+  drag={id:e.pointerId,x:e.clientX,y:e.clientY,sx:e.clientX,sy:e.clientY,
+        pan:e.shiftKey||e.button===2||e.button===1,pts:new Map([[e.pointerId,[e.clientX,e.clientY]]])};
+  canvas.classList.add("dragging");
+});
+canvas.addEventListener("pointermove",e=>{
+  if(!drag)return;
+  drag.pts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(drag.pts.size===2){
+    const pts=[...drag.pts.values()];
+    const d=Math.hypot(pts[0][0]-pts[1][0],pts[0][1]-pts[1][1]);
+    if(drag.lastPinch)cam.dist=Math.max(.4,Math.min(60,cam.dist*drag.lastPinch/d));
+    drag.lastPinch=d;
+    return;
+  }
+  if(e.pointerId!==drag.id)return;
+  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
+  drag.x=e.clientX;drag.y=e.clientY;
+  if(drag.pan){
+    const s=cam.dist*0.0016;
+    const right=[Math.cos(cam.yaw-Math.PI/2),Math.sin(cam.yaw-Math.PI/2),0];
+    cam.target=V.add(cam.target,V.scl(right,dx*s));
+    cam.target=V.add(cam.target,[0,0,dy*s]);
+  } else {
+    cam.yaw-=dx*0.008;
+    cam.pitch=Math.max(-1.25,Math.min(1.45,cam.pitch+dy*0.008));
+  }
+});
+function endDrag(e){
+  if(!drag)return;
+  drag.pts.delete(e.pointerId);
+  if(e.pointerId===drag.id){
+    const moved=Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy);
+    canvas.classList.remove("dragging");
+    const wasPan=drag.pan;drag=null;
+    if(moved<5&&!wasPan){
+      const r=canvas.getBoundingClientRect();
+      const hit=pick(e.clientX-r.left,e.clientY-r.top);
+      if(!hit){selPort=null;selNode=null;}
+      else if(hit.type==="port"){selPort=hit.port;selNode=null;}
+      else{selNode=hit.node;selPort=null;}
+      renderPanels();
+    }
+  }
+}
+canvas.addEventListener("pointerup",endDrag);
+canvas.addEventListener("pointercancel",endDrag);
+canvas.addEventListener("contextmenu",e=>e.preventDefault());
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();
+  cam.dist=Math.max(.4,Math.min(60,cam.dist*Math.exp(e.deltaY*0.0012)));
+},{passive:false});
+$("zin").addEventListener("click",()=>cam.dist=Math.max(.4,cam.dist/1.25));
+$("zout").addEventListener("click",()=>cam.dist=Math.min(60,cam.dist*1.25));
+$("zfit").addEventListener("click",fitView);
+
+/* ---- thumbnails (little 3D renders of every part) ---- */
+let thumbEng=null,thumbCanvas=null;
+const thumbCache={};
+function thumbSrc(key,buildFn){
+  if(thumbCache[key])return thumbCache[key];
+  if(!thumbEng){
+    thumbCanvas=document.createElement("canvas");
+    thumbCanvas.width=thumbCanvas.height=132;
+    thumbEng=makeEngine(thumbCanvas,{preserve:true,alpha:true});
+    if(!thumbEng)return "";
+  }
+  const arr=[];buildFn(arr);
+  let mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];
+  for(let i=0;i<arr.length;i+=12)for(let k=0;k<3;k++){mn[k]=Math.min(mn[k],arr[i+k]);mx[k]=Math.max(mx[k],arr[i+k]);}
+  const c=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2,(mn[2]+mx[2])/2];
+  const r=Math.max(.05,V.len(V.sub(mx,mn))/2);
+  const gl=thumbEng.gl;
+  thumbEng.setStatic(new Float32Array(arr));
+  gl.viewport(0,0,132,132);
+  const eye=V.add(c,V.scl(V.norm([1,-0.85,0.7]),r*2.6));
+  const vp=m4mul(m4persp(0.7,1,0.02,50),m4look(eye,c,[0,0,1]));
+  gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(thumbEng.prog);
+  gl.uniformMatrix4fv(thumbEng.U.vp,false,vp);
+  gl.uniform3fv(thumbEng.U.eye,eye);
+  gl.uniform1f(thumbEng.U.mode,0);gl.uniform1f(thumbEng.U.uni,0);
+  thumbEng.bindMain(thumbEng.buffers.staticBuf);
+  gl.uniformMatrix4fv(thumbEng.U.model,false,M4I);
+  gl.drawArrays(gl.TRIANGLES,0,thumbEng.counts().staticCount);
+  const url=thumbCanvas.toDataURL("image/png");
+  thumbCache[key]=url;
+  return url;
+}
+function pipeThumb(sys,sz){
+  return thumbSrc("pipe:"+sys+":"+sz,arr=>{
+    meshForShape(arr,{t:"pipe",n:{data:{sys,sz},meta:{L:.5}},a:[0,0,0],b:[.5,0,0],d:0},NOPICK);
+  });
+}
+function defThumb(d){
+  return thumbSrc(d.id,arr=>{
+    if(d.geo==="elbow") meshForShape(arr,{t:"elbow",def:d,a:[-.11,0,0],c:[0,0,0],b:[0,.11,0],d:0},NOPICK);
+    else if(d.geo==="tee") meshForShape(arr,{t:"tee",def:d,a:[-.13,0,0],b:[.13,0,0],m:[0,0,0],bp:[0,.13,0],d:0},NOPICK);
+    else meshForShape(arr,{t:d.geo==="end"?"endfit":"inline",def:d,a:[0,0,0],b:[d.geo==="end"?END_LEN:FIT_LEN,0,0],d:0},NOPICK);
+  });
+}
 
 /* ================= attach panel ================= */
 function sysOfSpec(sp){
   return {sock:"pvc",comp:"hdpe",bcomp:"palpe",fus:"ppr"}[sp.t] || (sp.t==="pend"?sp.sys:null);
-}
-function candidatePipes(spec){
-  const out=[];
-  for(const sys in SYS){
-    if(!SYS[sys].sizes.length) continue;
-    for(const sz of SYS[sys].sizes)
-      if(match(spec,pipeEndSpec(sys,sz))) out.push({sys,sz});
-  }
-  return out;
 }
 function candidateFits(spec){
   const out=[];
@@ -610,18 +936,38 @@ function candidateFits(spec){
   return out;
 }
 function pipePricePerM(sys,sz){const S=SYS[sys];return S.perM?S.perM[sz]:S.perUnit[sz]/S.unitLen;}
-
+function isTransition(d){
+  const kinds=new Set(d.ports.map(p=>p.t));
+  if(kinds.size>1&&!(kinds.has("thm")&&kinds.has("thf")&&kinds.size===2)) return true;
+  if(kinds.has("thm")&&kinds.has("thf")) return d.id.includes("bush");
+  const szs=new Set(d.ports.map(p=>p.sz)); return szs.size>1;
+}
+function advanceSelection(node){
+  const ps=portsOf(node);
+  selPort=ps.length?{node,key:ps[0].key,spec:ps[0].spec}:null;
+  selNode=null;
+}
+function refresh(){rebuildScene();renderPanels();}
+function mk(parent,label,fn,primary){const b=document.createElement("button");b.className="mini"+(primary?" add":"");b.textContent=label;b.addEventListener("click",fn);parent.appendChild(b);}
+function legend(el){
+  el.insertAdjacentHTML("beforeend",`<div class="grouph">How each joint is made</div>`);
+  for(const m in METHODS){
+    const d=document.createElement("details");d.className="joint";
+    d.innerHTML=`<summary>${METHODS[m].name}</summary><p>${METHODS[m].how}</p>`;
+    el.appendChild(d);
+  }
+}
 function renderPanels(){
   const el=$("attach"), lt=$("lefttitle");
   el.innerHTML="";
   if(!root){
     lt.textContent="Start";
-    el.insertAdjacentHTML("beforeend",`<p class="ctx">Where does your water come from? Pick a starting point — then keep clicking the <b>orange dots</b> to snap parts on.</p>`);
+    el.insertAdjacentHTML("beforeend",`<p class="ctx">Where does your water come from? Pick a starting point — then keep clicking the <b>orange balls</b> in 3D to snap parts on.</p>`);
     for(const id in STARTS){
       const s=STARTS[id];
       const c=document.createElement("div"); c.className="card startcard"; c.tabIndex=0; c.setAttribute("role","button");
-      c.innerHTML=`<div class="nm">${s.name}</div><div class="store">${s.store}</div>${s.note?`<div class="note">${s.note}</div>`:""}`;
-      const go=()=>{pushUndo();root=mkNode("start",id);selPort=null;fitView();renderAll();};
+      c.innerHTML=`<div class="ct"><div class="nm">${s.name}</div><div class="store">${s.store}</div>${s.note?`<div class="note">${s.note}</div>`:""}</div>`;
+      const go=()=>{pushUndo();root=mkNode("start",id);selPort=null;rebuildScene();fitView();renderPanels();};
       c.addEventListener("click",go);
       c.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
       el.appendChild(c);
@@ -636,102 +982,137 @@ function renderPanels(){
     if(selNode.kind==="start"){const s=STARTS[selNode.data];nm=s.name;store=s.store;price=null;note=s.note;}
     else if(selNode.kind==="pipe"){const S=SYS[selNode.data.sys];nm=S.label+" "+S.szl(selNode.data.sz)+" — "+selNode.meta.L+" m";store=S.pipeStore(selNode.data.sz);price=(pipePricePerM(selNode.data.sys,selNode.data.sz)*selNode.meta.L);note="";}
     else {const d=DEFBY[selNode.data];nm=d.name;store="Ask for: "+d.store;price=d.price;note=d.note||"";}
-    el.insertAdjacentHTML("beforeend",`<div class="card"><div class="nm">${nm}</div><div class="store">${store||""}</div>
+    el.insertAdjacentHTML("beforeend",`<div class="card"><div class="ct"><div class="nm">${nm}</div><div class="store">${store||""}</div>
       ${price!=null?`<div class="price" style="margin-top:4px">≈ RM ${price.toFixed(2)}</div>`:""}
       ${note?`<div class="note">${note}</div>`:""}
-      ${selNode.joint?`<div class="note">Joined by: <b>${METHODS[selNode.joint].name}</b></div>`:""}</div>`);
+      ${selNode.joint?`<div class="note">Joined by: <b>${METHODS[selNode.joint].name}</b></div>`:""}</div></div>`);
+    if(selNode.kind==="pipe"){
+      const row=document.createElement("div");row.className="row";row.style.marginBottom="8px";
+      row.innerHTML=`<label>Length <input class="len" id="editlen" type="number" min="0.1" max="30" step="0.1" value="${selNode.meta.L}"> m</label>`;
+      const b=document.createElement("button");b.className="mini add";b.textContent="Set";
+      b.addEventListener("click",()=>{
+        const L=Math.max(.1,Math.min(30,parseFloat($("editlen").value)||selNode.meta.L));
+        pushUndo();selNode.meta.L=Math.round(L*10)/10;refresh();
+      });
+      row.appendChild(b);el.appendChild(row);
+    }
+    if(selNode.kind==="fit"){
+      const d=DEFBY[selNode.data];
+      if(d.geo==="elbow"||d.geo==="tee"){
+        const b=document.createElement("button");b.className="btn";b.style.marginBottom="8px";
+        b.textContent="↻ Rotate direction";
+        b.addEventListener("click",()=>{
+          pushUndo();
+          const ps=PERPS(selNode._d);
+          const kmeta=d.geo==="elbow"?"out":"branch";
+          const cur=selNode.meta[kmeta]??ps[0];
+          selNode.meta[kmeta]=ps[(ps.indexOf(cur)+1)%ps.length];
+          refresh();
+        });
+        el.appendChild(b);
+        el.insertAdjacentHTML("beforeend",`<p class="note" style="margin:0 0 8px">Rotates where the ${d.geo==="elbow"?"turn":"branch"} points — cycle through left / right / up / down and watch it in 3D.</p>`);
+      }
+    }
     if(selNode.parent){
       const b=document.createElement("button");b.className="btn dangerbtn";b.textContent="Remove this part (and everything after it)";
-      b.addEventListener("click",()=>{removeNode(selNode);renderAll();});
+      b.addEventListener("click",()=>{removeNode(selNode);refresh();});
       el.appendChild(b);
     } else {
       el.insertAdjacentHTML("beforeend",`<p class="note">This is your starting point — use Clear (top right) to restart.</p>`);
     }
     const back=document.createElement("button");back.className="btn";back.style.marginTop="8px";back.textContent="Done";
-    back.addEventListener("click",()=>{selNode=null;renderAll();});
+    back.addEventListener("click",()=>{selNode=null;renderPanels();});
     el.appendChild(back);
     updateBOM();
     return;
   }
   if(!selPort){
     lt.textContent="Attach";
-    el.insertAdjacentHTML("beforeend",`<p class="ctx">Click an <b>orange dot</b> on the canvas — I'll show every part that genuinely fits there (and hide the ones that don't, so you never buy a wrong fitting).</p>`);
+    el.insertAdjacentHTML("beforeend",`<p class="ctx">Click an <b>orange ball</b> on the 3D canvas — I'll show every pipe and part that genuinely fits there (and the connector that goes in the middle).</p>`);
     legend(el);
     updateBOM();
     return;
   }
   lt.textContent="Attach here";
   const spec=selPort.spec;
-  el.insertAdjacentHTML("beforeend",`<p class="ctx">Open connection: <b>${specLabel(spec)}</b>. Everything below fits it.</p>`);
-  const pipes=candidatePipes(spec), fits=candidateFits(spec);
   const ctxSys=sysOfSpec(spec);
+  el.insertAdjacentHTML("beforeend",`<p class="ctx">Open connection: <b>${specLabel(spec)}</b>.<br>What do you want to combine this with?</p>`);
 
-  if(pipes.length){
-    el.insertAdjacentHTML("beforeend",`<div class="grouph">Pipe</div>`);
-    for(const p of pipes){
-      const S=SYS[p.sys];
-      const c=document.createElement("div");c.className="card";
-      c.innerHTML=`<div class="nm"><span class="swatch" style="background:${S.color}"></span>${S.label} ${S.szl(p.sz)}</div>
-        <div class="store">${S.pipeStore(p.sz)}</div>
-        <div class="row"><label>Length <input class="len" type="number" min="0.1" max="30" step="0.1" value="1.0"> m</label>
-        <span class="price">≈ RM ${pipePricePerM(p.sys,p.sz).toFixed(2)}/m</span>
-        <button class="mini add">Add pipe</button></div>`;
-      c.querySelector(".add").addEventListener("click",()=>{
-        const L=Math.max(.1,Math.min(30,parseFloat(c.querySelector(".len").value)||1));
-        const node=mkNode("pipe",{sys:p.sys,sz:p.sz},{L:Math.round(L*10)/10});
-        attach(selPort.node,selPort.key,node);
-        advanceSelection(node);renderAll();
-      });
-      el.appendChild(c);
+  /* --- combine with a pipe: connector auto-inserted in the middle --- */
+  el.insertAdjacentHTML("beforeend",`<div class="grouph">Combine with a pipe</div>`);
+  const pipeOptions=[];
+  for(const sys in SYS){
+    if(!SYS[sys].sizes.length)continue;
+    for(const sz of SYS[sys].sizes){
+      const chain=chainTo(spec,sys,sz);
+      if(chain)pipeOptions.push({sys,sz,chain});
     }
   }
-  const groups=[["Fittings",fits.filter(f=>f.def.geo!=="end"&&(sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def))],
-                ["Change material or size",fits.filter(f=>f.def.geo!=="end"&&!( (sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def) ))],
+  pipeOptions.sort((a,b)=>{
+    const sa=(sysOfSpec(spec)===a.sys?0:1)-(sysOfSpec(spec)===b.sys?0:1);
+    if(sa)return sa;
+    return (a.chain.defs.length-b.chain.defs.length)||(a.chain.cost-b.chain.cost);
+  });
+  for(const p of pipeOptions){
+    const S=SYS[p.sys];
+    const c=document.createElement("div");c.className="card";
+    const chainTxt=p.chain.defs.length
+      ?`Goes in the middle: <b>${p.chain.defs.map(x=>x.def.name).join(" + ")}</b> (adds RM ${p.chain.cost.toFixed(2)})`
+      :`Fits directly — no adapter needed`;
+    c.innerHTML=`<img class="thumb" alt="" src="${pipeThumb(p.sys,p.sz)}"><div class="ct">
+      <div class="nm">${S.label} ${S.szl(p.sz)}</div>
+      <div class="store">${S.pipeStore(p.sz)}</div>
+      <div class="chain">${chainTxt}</div>
+      <div class="row"><label>Length <input class="len" type="number" min="0.1" max="30" step="0.1" value="1.0"> m</label>
+      <span class="price">≈ RM ${pipePricePerM(p.sys,p.sz).toFixed(2)}/m</span>
+      <button class="mini add">Combine</button></div></div>`;
+    c.querySelector(".add").addEventListener("click",()=>{
+      const L=Math.max(.1,Math.min(30,parseFloat(c.querySelector(".len").value)||1));
+      pushUndo();
+      let cur={node:selPort.node,key:selPort.key};
+      for(const step of p.chain.defs){
+        const fnode=mkNode("fit",step.def.id,{});fnode.via=step.via;
+        attach(cur.node,cur.key,fnode);
+        cur={node:fnode,key:portsOf(fnode)[0].key};
+      }
+      const pnode=mkNode("pipe",{sys:p.sys,sz:p.sz},{L:Math.round(L*10)/10});
+      attach(cur.node,cur.key,pnode);
+      advanceSelection(pnode);refresh();
+    });
+    el.appendChild(c);
+  }
+  if(!pipeOptions.length)
+    el.insertAdjacentHTML("beforeend",`<p class="empty">No pipe can reach this connection with the adapters in the catalog.</p>`);
+
+  /* --- individual fittings --- */
+  const fits=candidateFits(spec);
+  const groups=[["Add a fitting here",fits.filter(f=>f.def.geo!=="end"&&(sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def))],
+                ["Change material or size (adapters)",fits.filter(f=>f.def.geo!=="end"&&!((sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def)))],
                 ["Finish the line (taps, caps)",fits.filter(f=>f.def.geo==="end")]];
   for(const [gname,list] of groups){
-    if(!list.length) continue;
+    if(!list.length)continue;
     el.insertAdjacentHTML("beforeend",`<div class="grouph">${gname}</div>`);
     for(const f of list){
-      const d=f.def,S=SYS[d.sys];
+      const d=f.def;
       const c=document.createElement("div");c.className="card";
-      c.innerHTML=`<div class="nm"><span class="swatch" style="background:${S.fit}"></span>${d.name}</div>
+      c.innerHTML=`<img class="thumb" alt="" src="${defThumb(d)}"><div class="ct">
+        <div class="nm">${d.name}</div>
         <div class="store">Ask for: ${d.store}</div>
         ${d.note?`<div class="note">${d.note}</div>`:""}
-        <div class="row"><span class="price">≈ RM ${d.price.toFixed(2)}</span><span class="rowbtns"></span></div>`;
+        <div class="row"><span class="price">≈ RM ${d.price.toFixed(2)}</span><span class="rowbtns"></span></div></div>`;
       const btns=c.querySelector(".rowbtns");
-      const addWith=(meta)=>{const node=mkNode("fit",d.id,meta);node.via=f.via;attach(selPort.node,selPort.key,node);advanceSelection(node);renderAll();};
+      const addWith=(meta)=>{pushUndo();const node=mkNode("fit",d.id,meta);node.via=f.via;attach(selPort.node,selPort.key,node);advanceSelection(node);refresh();};
       if(d.geo==="elbow"){
-        for(const o of PERPS(selPort.dir)) mk(btns,DIRNAME[o],()=>addWith({out:o}));
+        const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
+        ps.forEach((o,i)=>mk(btns,labs[i],()=>addWith({out:o})));
       } else if(d.geo==="tee"){
-        for(const o of PERPS(selPort.dir)) mk(btns,DIRNAME[o],()=>addWith({branch:o}));
+        const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
+        ps.forEach((o,i)=>mk(btns,labs[i],()=>addWith({branch:o})));
       } else mk(btns,"Add",()=>addWith({}),true);
       el.appendChild(c);
     }
   }
-  if(!pipes.length&&!fits.length)
-    el.insertAdjacentHTML("beforeend",`<p class="empty">Nothing in the catalog fits this port — remove the last part and try a different transition.</p>`);
   updateBOM();
-}
-function mk(parent,label,fn,primary){const b=document.createElement("button");b.className="mini"+(primary?" add":"");b.textContent=label;b.addEventListener("click",fn);parent.appendChild(b);}
-function isTransition(d){
-  const kinds=new Set(d.ports.map(p=>p.t));
-  if(kinds.size>1&&!(kinds.has("thm")&&kinds.has("thf")&&kinds.size===2)) return true; // mixed system = adapter
-  if(kinds.has("thm")&&kinds.has("thf")) return d.id.includes("bush"); // bush = size transition
-  const szs=new Set(d.ports.map(p=>p.sz)); return szs.size>1;
-}
-function advanceSelection(node){
-  const ps=portsOf(node);
-  if(ps.length){ selPort={node,key:ps[0].key,spec:ps[0].spec}; }
-  else selPort=null;
-  selNode=null;
-}
-function legend(el){
-  el.insertAdjacentHTML("beforeend",`<div class="grouph">How each joint is made</div>`);
-  for(const m in METHODS){
-    const d=document.createElement("details");d.className="joint";
-    d.innerHTML=`<summary>${METHODS[m].name}</summary><p>${METHODS[m].how}</p>`;
-    el.appendChild(d);
-  }
 }
 
 /* ================= BOM ================= */
@@ -770,9 +1151,8 @@ function updateBOM(){
       rows+=`<tr><td>${q} × ${d.name}<div class="sub">ask for: ${d.store}</div></td><td class="r">RM ${c.toFixed(2)}</td></tr>`;
     }
   }
-  // consumables
   let cons="";
-  if(joints["solvent"]){const c=7;total+=c;cons+=`<tr><td>PVC solvent cement (small tin)<div class="sub">covers ~40 joints — you have ${joints["solvent"]}</div></td><td class="r">RM 7.00</td></tr>`;}
+  if(joints["solvent"]){total+=7;cons+=`<tr><td>PVC solvent cement (small tin)<div class="sub">covers ~40 joints — you have ${joints["solvent"]}</div></td><td class="r">RM 7.00</td></tr>`;}
   if(joints["thread"]){const rolls=Math.ceil(joints["thread"]/8),c=rolls*1.5;total+=c;cons+=`<tr><td>${rolls} × PTFE thread seal tape<div class="sub">~8 joints per roll — you have ${joints["thread"]} threaded joints</div></td><td class="r">RM ${c.toFixed(2)}</td></tr>`;}
   if(joints["fusion"])cons+=`<tr><td>PPR welding iron<div class="sub">rent from kedai ~RM20–40/day (not in total)</div></td><td class="r">—</td></tr>`;
   if(cons)rows+=`<tr><td colspan="2"><span class="eyebrow">Consumables</span></td></tr>`+cons;
@@ -801,48 +1181,15 @@ function bomText(pipes,fits,joints,total){
   return t;
 }
 
-/* ================= pan/zoom, toolbar ================= */
-const svg=$("canvas");
-let panState=null;
-svg.addEventListener("pointerdown",e=>{if(e.target.closest(".port-dot,.hit"))return;panState={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y};svg.classList.add("panning");svg.setPointerCapture(e.pointerId);});
-svg.addEventListener("pointermove",e=>{if(!panState)return;view.x=panState.vx+(e.clientX-panState.x);view.y=panState.vy+(e.clientY-panState.y);$("world").setAttribute("transform",`translate(${view.x},${view.y}) scale(${view.k})`);});
-svg.addEventListener("pointerup",e=>{if(panState&&Math.abs(e.clientX-panState.x)<4&&Math.abs(e.clientY-panState.y)<4){selPort=null;selNode=null;renderAll();}panState=null;svg.classList.remove("panning");});
-svg.addEventListener("wheel",e=>{e.preventDefault();const f=e.deltaY<0?1.12:0.89;zoomAt(f,e.clientX,e.clientY);},{passive:false});
-function zoomAt(f,cx,cy){
-  const r=svg.getBoundingClientRect(),px=cx-r.left,py=cy-r.top;
-  const k2=Math.max(.25,Math.min(3,view.k*f));
-  view.x=px-(px-view.x)*(k2/view.k);view.y=py-(py-view.y)*(k2/view.k);view.k=k2;
-  $("world").setAttribute("transform",`translate(${view.x},${view.y}) scale(${view.k})`);
-}
-$("zin").addEventListener("click",()=>{const r=svg.getBoundingClientRect();zoomAt(1.2,r.left+r.width/2,r.top+r.height/2);});
-$("zout").addEventListener("click",()=>{const r=svg.getBoundingClientRect();zoomAt(1/1.2,r.left+r.width/2,r.top+r.height/2);});
-$("zfit").addEventListener("click",fitView);
-function fitView(){
-  const r=svg.getBoundingClientRect();
-  if(!root){view={x:r.width*.3,y:r.height*.5,k:1};}
-  else{
-    const out={shapes:[],ports:[],labels:[]};layout(root,[0,0,0],0,out);
-    let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
-    const pts=[];
-    out.shapes.forEach(s=>{["a","b","c","p","m","bp"].forEach(k=>{if(s[k])pts.push(S3(s[k]));});});
-    out.ports.forEach(p=>pts.push(S3(p.pos)));
-    if(!pts.length)pts.push([0,0]);
-    pts.forEach(p=>{minx=Math.min(minx,p[0]);maxx=Math.max(maxx,p[0]);miny=Math.min(miny,p[1]);maxy=Math.max(maxy,p[1]);});
-    const pad=70,w=maxx-minx+pad*2,h=maxy-miny+pad*2;
-    const k=Math.max(.3,Math.min(1.6,Math.min(r.width/w,r.height/h)));
-    view={k,x:(r.width-(maxx+minx)*k)/2,y:(r.height-(maxy+miny)*k)/2};
-  }
-  renderAll();
-}
+/* ================= toolbar ================= */
 function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1800);}
-
 $("undo").addEventListener("click",()=>{
   if(!undoStack.length){toast("Nothing to undo");return;}
-  root=build(undoStack.pop());selPort=null;selNode=null;renderAll();
+  root=build(undoStack.pop());selPort=null;selNode=null;refresh();
 });
 $("clear").addEventListener("click",()=>{
   if(root&&!confirm("Clear the whole assembly?"))return;
-  pushUndo();root=null;selPort=null;selNode=null;fitView();
+  pushUndo();root=null;selPort=null;selNode=null;refresh();fitView();
 });
 $("save").addEventListener("click",()=>{
   localStorage.setItem("pipeplay-save",JSON.stringify(serialize(root)));toast("Saved in this browser");
@@ -850,7 +1197,7 @@ $("save").addEventListener("click",()=>{
 $("load").addEventListener("click",()=>{
   const s=localStorage.getItem("pipeplay-save");
   if(!s){toast("No saved assembly yet");return;}
-  pushUndo();root=build(JSON.parse(s));selPort=null;selNode=null;fitView();toast("Loaded");
+  pushUndo();root=build(JSON.parse(s));selPort=null;selNode=null;refresh();fitView();toast("Loaded");
 });
 $("copy").addEventListener("click",async()=>{
   if(!window._bomText){toast("Nothing to copy yet");return;}
@@ -863,13 +1210,11 @@ const P=(sys,sz,L,ch)=>({k:"pipe",d:{sys,sz},m:{L},v:0,c:ch||{}});
 const F_=(id,m,via,ch)=>({k:"fit",d:id,m:m||{},v:via||0,c:ch||{}});
 /* directions: 0 E · 1 S · 2 W · 3 N · 4 up · 5 down */
 const EXAMPLES={
-  // classic Malaysian standpipe: run along, then rise to the tap
   garden:{k:"start",d:"wallm",m:{},v:0,c:{0:
     F_("pvc-fs-12",{},1,{0:P("pvc","12",0.3,{0:
       F_("pvc-valve-12",{},0,{1:P("pvc","12",3,{0:
         F_("pvc-elbow-12",{out:4},0,{1:P("pvc","12",0.9,{0:
           F_("pvc-fs-12",{},0,{1:F_("tap-bib")})})})})})})})}},
-  // elevated tank: drop to the ground, run along, rise back up to the tap
   tank:{k:"start",d:"tank",m:{},v:0,c:{0:
     F_("hd-fa-25",{},1,{0:P("hdpe","25",0.4,{0:
       F_("hd-elbow-25",{out:5},0,{1:P("hdpe","25",0.9,{0:
@@ -878,7 +1223,6 @@ const EXAMPLES={
             F_("hd-ma-25",{},0,{1:
               F_("gi-sock-34",{},0,{1:
                 F_("gi-bush-34-12",{},0,{1:F_("tap-ball")})})})})})})})})})})})}},
-  // one wall point, two taps: run continues + a riser branch going up
   tee:{k:"start",d:"wallm",m:{},v:0,c:{0:
     F_("pvc-fs-12",{},1,{0:P("pvc","12",1.2,{0:
       F_("pvc-tee-12",{branch:4},0,{1:P("pvc","12",1.0,{0:
@@ -889,10 +1233,24 @@ const EXAMPLES={
 $("examples").addEventListener("change",e=>{
   const v=e.target.value;e.target.value="";
   if(!v)return;
-  pushUndo();root=build(JSON.parse(JSON.stringify(EXAMPLES[v])));selPort=null;selNode=null;fitView();
-  toast("Example loaded — click any orange dot to keep building");
+  pushUndo();root=build(JSON.parse(JSON.stringify(EXAMPLES[v])));selPort=null;selNode=null;
+  refresh();fitView();
+  toast("Example loaded — orbit around it, then click any orange ball to keep building");
 });
 
+/* test hooks */
+window.PP={
+  ports:()=>{const r=canvas.getBoundingClientRect();
+    return lastPorts.map(p=>{const pr=project(p.pos);
+      return {x:r.left+(pr[0]+1)/2*canvas.clientWidth,y:r.top+(1-pr[1])/2*canvas.clientHeight,spec:p.spec.t};});},
+  ser:()=>serialize(root),
+  webgl:!!ENG
+};
+
 /* init */
-fitView();
+if(!ENG){
+  $("hint").textContent="WebGL is not available in this browser — the 3D canvas cannot start.";
+}
+refresh();fitView();
+requestAnimationFrame(frame);
 </script>
