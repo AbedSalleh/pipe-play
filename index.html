@@ -387,6 +387,11 @@ const PERPS=d=>d<4?[(d+3)%4,(d+1)%4,4,5]:[0,1,2,3];
 function dirLabels(dIn){
   return dIn<4 ? ["⟲ left","⟳ right","↑ up","↓ down"] : ["East","South","West","North"];
 }
+function midAxes(dIn){ // one representative per perpendicular axis (for middle-entry tees)
+  const seen=new Set(),out=[];
+  for(const d of PERPS(dIn)){const ax=d<4?d%2:2;if(!seen.has(ax)){seen.add(ax);out.push(d);}}
+  return out;
+}
 const RAD={"12":.030,"34":.036,"1":.042,"16":.026,"20":.030,"25":.036,"32":.042};
 const radOf=sz=>RAD[sz]||.032;
 const FIT_LEN=.14, END_LEN=.09, ELB_ARM=.10, TEE_RUN=.24, TEE_BR=.13;
@@ -419,12 +424,20 @@ function layout(n,p0,dIn,out){
       const other=n.via===0?1:0;
       exits=[{key:other,spec:d.ports[other],pos:e,dir:nd}];
     } else if(d.geo==="tee"){
-      let bd=n.meta.branch;
-      if(bd==null||bd===dIn||bd===OPP(dIn)) bd=PERPS(dIn)[0];
-      const r=pos(p0,dIn,TEE_RUN), m=pos(p0,dIn,TEE_RUN/2), b=pos(m,bd,TEE_BR);
-      out.shapes.push({t:"tee",n,a:p0,b:r,m,bp:b,d:dIn,def:d});
       const ps=portsOf(n);
-      exits=[{key:ps[0].key,spec:ps[0].spec,pos:r,dir:dIn},{key:ps[1].key,spec:ps[1].spec,pos:b,dir:bd}];
+      if(n.via===2){ // entered through the middle: run lies across the incoming line
+        let rd=n.meta.runDir;
+        if(rd==null||rd===dIn||rd===OPP(dIn)) rd=PERPS(dIn)[0];
+        const m=pos(p0,dIn,TEE_BR), a=pos(m,OPP(rd),TEE_RUN/2), b=pos(m,rd,TEE_RUN/2);
+        out.shapes.push({t:"tee",n,a,b,m,bp:p0,d:dIn,def:d});
+        exits=[{key:ps[0].key,spec:ps[0].spec,pos:a,dir:OPP(rd)},{key:ps[1].key,spec:ps[1].spec,pos:b,dir:rd}];
+      } else { // entered through a run end: flow continues, branch tees off
+        let bd=n.meta.branch;
+        if(bd==null||bd===dIn||bd===OPP(dIn)) bd=PERPS(dIn)[0];
+        const r=pos(p0,dIn,TEE_RUN), m=pos(p0,dIn,TEE_RUN/2), b=pos(m,bd,TEE_BR);
+        out.shapes.push({t:"tee",n,a:p0,b:r,m,bp:b,d:dIn,def:d});
+        exits=[{key:ps[0].key,spec:ps[0].spec,pos:r,dir:dIn},{key:ps[1].key,spec:ps[1].spec,pos:b,dir:bd}];
+      }
     }
   }
   n._exits=exits;
@@ -1074,7 +1087,7 @@ function renderPanels(){
             selNode.meta.face=(cur+1)%4;
           } else {
             const ps=PERPS(selNode._d);
-            const kmeta=d.geo==="elbow"?"out":"branch";
+            const kmeta=d.geo==="elbow"?"out":(selNode.via===2?"runDir":"branch");
             const cur=selNode.meta[kmeta]??ps[0];
             selNode.meta[kmeta]=ps[(ps.indexOf(cur)+1)%ps.length];
           }
@@ -1173,14 +1186,21 @@ function renderPanels(){
         ${d.note?`<div class="note">${d.note}</div>`:""}
         <div class="row"><span class="price">≈ RM ${d.price.toFixed(2)}</span><span class="rowbtns"></span></div></div>`;
       const btns=c.querySelector(".rowbtns");
-      const addWith=(meta)=>{pushUndo();const node=mkNode("fit",d.id,meta);node.via=f.via;attach(selPort.node,selPort.key,node);advanceSelection(node);refresh();};
+      const addWith=(meta,via)=>{pushUndo();const node=mkNode("fit",d.id,meta);node.via=(via!=null?via:f.via);attach(selPort.node,selPort.key,node);advanceSelection(node);refresh();};
       if(d.geo==="elbow"){
         const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
         ps.forEach((o,i)=>mk(btns,labs[i],()=>addWith({out:o})));
       } else if(d.geo==="tee"){
         const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
-        ps.forEach((o,i)=>mk(btns,labs[i],()=>addWith({branch:o})));
+        ps.forEach((o,i)=>mk(btns,"branch "+labs[i],()=>addWith({branch:o})));
+        for(const rd of midAxes(selPort.dir)){
+          const w=rd>=4?"run up-down":(selPort.dir>=4?(rd%2===0?"run E–W":"run N–S"):"run sideways");
+          mk(btns,"⊥ into middle · "+w,()=>addWith({runDir:rd},2));
+        }
       } else mk(btns,"Add",()=>addWith({}),true);
+      if(d.geo==="tee")
+        c.querySelector(".ct").insertAdjacentHTML("beforeend",
+          `<div class="note">"Branch" = your line flows through and a side outlet tees off. "Into middle" = your line enters the tee's middle and the run lies across it (both sides stay open).</div>`);
       el.appendChild(c);
     }
   }
