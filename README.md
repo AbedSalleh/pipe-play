@@ -8,8 +8,13 @@ Open `index.html` in any browser. No build step, no dependencies, works offline.
 
 ## What it does
 
-- **Snap-together canvas** — start from a wall point, pipe stub, water tank, or
-  a free run, then click the orange dots to attach the next part.
+- **Snap-together 3D canvas (isometric)** — start from a wall point, pipe stub,
+  water tank, or a free run, then click the orange dots to attach the next
+  part. The scene is true 3D drawn as a plumber's isometric: elbows and tees
+  can turn in the four horizontal directions **and up/down**, so risers,
+  standpipes and drops render properly. Parts above the floor cast a soft
+  shadow on the ground plane so height reads at a glance, and vertical runs
+  are labelled with ↑/↓.
 - **Real compatibility rules** — it only offers parts that genuinely fit the
   open connection: solvent sockets take PVC, compression fittings take HDPE,
   BSP male meets BSP female, and cross-material transitions go through the
