@@ -75,6 +75,7 @@
   .grouph:first-child{margin-top:0}
   .card{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:7px;background:var(--panel);display:flex;gap:10px}
   .card .thumb{width:56px;height:56px;flex:none;border:1px solid var(--line);border-radius:6px;background:var(--panel2);object-fit:cover}
+  .card .thumb.big{width:104px;height:104px}
   .card .ct{flex:1;min-width:0}
   .card .nm{font-weight:600;font-size:13px}
   .card .store{font-size:11.5px;color:var(--mut);margin-top:1px}
@@ -1065,11 +1066,12 @@ function renderPanels(){
   }
   if(selNode){
     lt.textContent="Selected part";
-    let nm,store,price,note;
+    let nm,store,price,note,thumb="";
     if(selNode.kind==="start"){const s=STARTS[selNode.data];nm=s.name;store=s.store;price=null;note=s.note;}
-    else if(selNode.kind==="pipe"){const S=SYS[selNode.data.sys];nm=S.label+" "+S.szl(selNode.data.sz)+" — "+selNode.meta.L+" m";store=S.pipeStore(selNode.data.sz);price=(pipePricePerM(selNode.data.sys,selNode.data.sz)*selNode.meta.L);note="";}
-    else {const d=DEFBY[selNode.data];nm=d.name;store="Ask for: "+d.store;price=d.price;note=d.note||"";}
-    el.insertAdjacentHTML("beforeend",`<div class="card"><div class="ct"><div class="nm">${nm}</div><div class="store">${store||""}</div>
+    else if(selNode.kind==="pipe"){const S=SYS[selNode.data.sys];nm=S.label+" "+S.szl(selNode.data.sz)+" — "+selNode.meta.L+" m";store=S.pipeStore(selNode.data.sz);price=(pipePricePerM(selNode.data.sys,selNode.data.sz)*selNode.meta.L);note="";thumb=pipeThumb(selNode.data.sys,selNode.data.sz);}
+    else {const d=DEFBY[selNode.data];nm=d.name;store="Ask for: "+d.store;price=d.price;note=d.note||"";thumb=defThumb(d);}
+    el.insertAdjacentHTML("beforeend",`<div class="card">${thumb?`<img class="thumb big" alt="What this part looks like on its own" src="${thumb}">`:""}<div class="ct"><div class="nm">${nm}</div><div class="store">${store||""}</div>
+      ${thumb?`<div class="note">← this part on its own, as you'd see it at the kedai</div>`:""}
       ${price!=null?`<div class="price" style="margin-top:4px">≈ RM ${price.toFixed(2)}</div>`:""}
       ${note?`<div class="note">${note}</div>`:""}
       ${selNode.joint?`<div class="note">Joined by: <b>${METHODS[selNode.joint].name}</b></div>`:""}</div></div>`);
