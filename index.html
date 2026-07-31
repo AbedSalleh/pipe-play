@@ -936,10 +936,10 @@ canvas.addEventListener("pointercancel",endDrag);
 canvas.addEventListener("contextmenu",e=>e.preventDefault());
 canvas.addEventListener("wheel",e=>{
   e.preventDefault();
-  cam.dist=Math.max(.4,Math.min(60,cam.dist*Math.exp(e.deltaY*0.0012)));
+  cam.dist=Math.max(.4,Math.min(60,cam.dist*Math.exp(e.deltaY*0.0022)));
 },{passive:false});
-$("zin").addEventListener("click",()=>cam.dist=Math.max(.4,cam.dist/1.25));
-$("zout").addEventListener("click",()=>cam.dist=Math.min(60,cam.dist*1.25));
+$("zin").addEventListener("click",()=>cam.dist=Math.max(.4,cam.dist/1.45));
+$("zout").addEventListener("click",()=>cam.dist=Math.min(60,cam.dist*1.45));
 $("zfit").addEventListener("click",fitView);
 
 /* ---- thumbnails (little 3D renders of every part) ---- */
