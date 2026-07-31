@@ -1,0 +1,834 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipe Play — Malaysian Pipe Combination Builder</title>
+<style>
+  :root{
+    --bg:#F4F3EF; --panel:#FFFFFF; --panel2:#EDECE6; --ink:#20262B; --mut:#6B7680;
+    --line:#DCDBD2; --grid:#E7E6DE; --grid2:#DEDDD3;
+    --accent:#E8621D; --accent-soft:#FBE9DE; --accent-ink:#FFFFFF;
+    --ok:#2F7D4D; --warn:#B3261E;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --shadow:0 1px 3px rgba(32,38,43,.08);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#15191D; --panel:#1D2328; --panel2:#232A30; --ink:#E8EAE6; --mut:#95A0A8;
+      --line:#2C343B; --grid:#1B2126; --grid2:#20272D;
+      --accent:#F07A33; --accent-soft:#3A2417; --accent-ink:#16110C;
+      --ok:#5BBB84; --warn:#F2827B;
+      --shadow:0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#15191D; --panel:#1D2328; --panel2:#232A30; --ink:#E8EAE6; --mut:#95A0A8;
+    --line:#2C343B; --grid:#1B2126; --grid2:#20272D;
+    --accent:#F07A33; --accent-soft:#3A2417; --accent-ink:#16110C;
+    --ok:#5BBB84; --warn:#F2827B;
+    --shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+  :root[data-theme="light"]{
+    --bg:#F4F3EF; --panel:#FFFFFF; --panel2:#EDECE6; --ink:#20262B; --mut:#6B7680;
+    --line:#DCDBD2; --grid:#E7E6DE; --grid2:#DEDDD3;
+    --accent:#E8621D; --accent-soft:#FBE9DE; --accent-ink:#FFFFFF;
+    --ok:#2F7D4D; --warn:#B3261E;
+    --shadow:0 1px 3px rgba(32,38,43,.08);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+  button{font:inherit;color:inherit}
+
+  .app{display:grid;grid-template-rows:auto 1fr;height:100vh}
+  header{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  header h1{font-size:15px;font-weight:700;margin:0;letter-spacing:.01em}
+  header h1 span{color:var(--mut);font-weight:500}
+  .spacer{flex:1}
+  .btn{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:5px 11px;cursor:pointer}
+  .btn:hover{background:var(--panel2)}
+  .btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+  .btn.primary:hover{filter:brightness(1.06)}
+  select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:5px 8px}
+
+  main{display:grid;grid-template-columns:300px 1fr 330px;min-height:0}
+  .pane{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);background:var(--panel)}
+  .pane:last-child{border-right:none;border-left:1px solid var(--line)}
+  .pane .head{padding:9px 14px 7px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+  .pane .body{overflow:auto;padding:12px 14px;flex:1}
+
+  /* canvas */
+  .canvas-wrap{position:relative;min-width:0;background:var(--bg)}
+  svg#canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+  svg#canvas.panning{cursor:grabbing}
+  .zoombar{position:absolute;right:12px;bottom:12px;display:flex;gap:6px}
+  .hint{position:absolute;left:12px;bottom:12px;font-size:12px;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 9px;box-shadow:var(--shadow)}
+
+  .port-dot{fill:var(--accent);stroke:var(--panel);stroke-width:2;cursor:pointer}
+  .port-halo{fill:none;stroke:var(--accent);opacity:.55;pointer-events:none;animation:pulse 1.6s ease-out infinite}
+  @keyframes pulse{0%{stroke-width:2;r:8;opacity:.55}100%{stroke-width:.5;r:16;opacity:0}}
+  @media (prefers-reduced-motion: reduce){.port-halo{animation:none;opacity:.3}}
+  .port-dot.sel{stroke:var(--ink);stroke-width:2.5}
+  .hit{stroke:transparent;fill:none;cursor:pointer}
+  .node-sel{stroke:var(--accent);stroke-dasharray:4 3;fill:none;opacity:.9}
+  .lenlabel{font-family:var(--mono);font-size:10.5px;fill:var(--mut)}
+  .jointtick{stroke:var(--mut);opacity:.75}
+
+  /* attach panel cards */
+  .ctx{font-size:12.5px;color:var(--mut);margin:0 0 10px}
+  .ctx b{color:var(--ink)}
+  .grouph{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin:14px 0 6px}
+  .grouph:first-child{margin-top:0}
+  .card{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:7px;background:var(--panel)}
+  .card .nm{font-weight:600;font-size:13px}
+  .card .store{font-size:11.5px;color:var(--mut);margin-top:1px}
+  .card .row{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap}
+  .price{font-family:var(--mono);font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:5px;border:1px solid rgba(0,0,0,.2)}
+  .mini{border:1px solid var(--line);background:var(--panel2);border-radius:6px;padding:3px 10px;cursor:pointer;font-size:12.5px}
+  .mini:hover{border-color:var(--accent)}
+  .mini.add{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+  input.len{width:64px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:3px 6px;font-family:var(--mono)}
+  .note{font-size:11.5px;color:var(--mut);margin-top:5px}
+  .empty{color:var(--mut);font-size:13px}
+  .startcard{cursor:pointer}
+  .startcard:hover{border-color:var(--accent)}
+  .dangerbtn{color:var(--warn);border-color:var(--warn)}
+
+  /* joints legend */
+  details.joint{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin-bottom:6px;font-size:12.5px}
+  details.joint summary{cursor:pointer;font-weight:600;font-size:12.5px}
+  details.joint p{margin:6px 0 2px;color:var(--mut)}
+
+  /* BOM */
+  table.bom{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.bom td{padding:4px 2px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.bom td.r{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.bom td .sub{color:var(--mut);font-size:11px}
+  .total{display:flex;justify-content:space-between;font-weight:700;padding:8px 2px;font-size:14px}
+  .total span{font-family:var(--mono)}
+  .disclaimer{font-size:11px;color:var(--mut);margin-top:8px}
+  .jsum{font-size:12px;color:var(--mut);margin:8px 0}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:var(--ink);color:var(--bg);padding:7px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
+  .toast.show{opacity:1}
+
+  @media (max-width: 980px){
+    .app{height:auto;min-height:100vh}
+    main{grid-template-columns:1fr}
+    .pane{border-right:none;border-top:1px solid var(--line);max-height:45vh}
+    .pane:last-child{border-left:none}
+    .canvas-wrap{height:52vh;order:-1}
+  }
+</style>
+
+<div class="app">
+<header>
+  <h1>Pipe Play <span>· Malaysian pipe combination builder</span></h1>
+  <div class="spacer"></div>
+  <select id="examples" aria-label="Load an example">
+    <option value="">Examples…</option>
+    <option value="garden">Extend a garden tap (PVC)</option>
+    <option value="tank">Tank → outdoor tap (HDPE run)</option>
+    <option value="tee">Two taps from one point (PVC tee)</option>
+  </select>
+  <button class="btn" id="undo" title="Undo last step">Undo</button>
+  <button class="btn" id="save">Save</button>
+  <button class="btn" id="load">Load</button>
+  <button class="btn" id="clear">Clear</button>
+</header>
+
+<main>
+  <section class="pane" id="leftpane">
+    <div class="head"><span class="eyebrow" id="lefttitle">Start</span></div>
+    <div class="body" id="attach"></div>
+  </section>
+
+  <section class="canvas-wrap">
+    <svg id="canvas" role="img" aria-label="Pipe assembly canvas">
+      <defs>
+        <pattern id="grid" width="25" height="25" patternUnits="userSpaceOnUse">
+          <path d="M25 0H0V25" fill="none" stroke="var(--grid)" stroke-width="1"/>
+        </pattern>
+        <pattern id="grid5" width="125" height="125" patternUnits="userSpaceOnUse">
+          <rect width="125" height="125" fill="url(#grid)"/>
+          <path d="M125 0H0V125" fill="none" stroke="var(--grid2)" stroke-width="1"/>
+        </pattern>
+      </defs>
+      <rect id="gridrect" x="-5000" y="-5000" width="10000" height="10000" fill="url(#grid5)"/>
+      <g id="world"></g>
+    </svg>
+    <div class="hint" id="hint">Click an orange dot to attach the next part · drag to pan · scroll to zoom</div>
+    <div class="zoombar">
+      <button class="btn" id="zin" aria-label="Zoom in">+</button>
+      <button class="btn" id="zout" aria-label="Zoom out">−</button>
+      <button class="btn" id="zfit" aria-label="Fit view">Fit</button>
+    </div>
+  </section>
+
+  <section class="pane">
+    <div class="head" style="display:flex;align-items:center">
+      <span class="eyebrow">Shopping list</span>
+      <div class="spacer"></div>
+      <button class="btn" id="copy" style="font-size:12px;padding:3px 9px">Copy list</button>
+    </div>
+    <div class="body" id="bom"></div>
+  </section>
+</main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ================= catalog ================= */
+const SZL = {"12":"½″","34":"¾″","1":"1″"};
+const M2PX = 50;
+
+const SYS = {
+  pvc:  {label:"PVC (uPVC, grey)", color:"#9AA3AB", fit:"#79838C", sizes:["12","34","1"],
+         szl:s=>SZL[s], perUnit:{"12":13,"34":18,"1":27}, unitLen:5.8, unitName:"length (5.8 m)",
+         pipeStore:s=>"Paip PVC "+SZL[s]+" kelas E (5.8 m)"},
+  gi:   {label:"GI (galvanised iron)", color:"#C4CBD2", fit:"#98A2AC", sizes:["12","34","1"],
+         szl:s=>SZL[s], perUnit:{"12":55,"34":78,"1":110}, unitLen:6, unitName:"length (6 m)",
+         pipeStore:s=>"Paip besi GI "+SZL[s]+" kelas B (6 m) — kedai boleh potong & buat benang (thread)"},
+  hdpe: {label:"HDPE poly pipe (black)", color:"#23272B", fit:"#30363C", sizes:["20","25","32"],
+         szl:s=>s+" mm", perM:{"20":2.5,"25":3.5,"32":5}, thread:{"20":"12","25":"34","32":"1"},
+         pipeStore:s=>"Paip poly HDPE "+s+"mm PE100 (jual ikut meter / gulung)"},
+  palpe:{label:"PE-AL-PE composite (white)", color:"#EDEDE8", fit:"#B9BDB4", sizes:["16","20"],
+         szl:s=>s+" mm", perM:{"16":4.5,"20":6.5}, thread:{"16":"12","20":"34"},
+         pipeStore:s=>"Paip PE-AL-PE "+s+"mm (jual ikut meter)"},
+  ppr:  {label:"PPR (green, heat-fusion)", color:"#3E9B5F", fit:"#2F7D4D", sizes:["20","25","32"],
+         szl:s=>s+" mm", perUnit:{"20":12,"25":17,"32":26}, unitLen:4, unitName:"length (4 m)",
+         thread:{"20":"12","25":"34","32":"1"},
+         pipeStore:s=>"Paip PPR "+s+"mm PN16 hijau (4 m)"},
+  brass:{label:"Brass / tap", color:"#B08A3E", fit:"#B08A3E", sizes:[]}
+};
+
+/* port spec constructors */
+const sock=(sz)=>({t:"sock",sz}), thm=(sz)=>({t:"thm",sz}), thf=(sz)=>({t:"thf",sz});
+const comp=(sz)=>({t:"comp",sz}), bcomp=(sz)=>({t:"bcomp",sz}), fus=(sz)=>({t:"fus",sz});
+
+function pipeEndSpec(sys,sz){
+  if(sys==="gi") return thm(sz);                 // GI pipe comes with threaded ends
+  return {t:"pend",sys,sz};
+}
+function specLabel(sp){
+  switch(sp.t){
+    case "thm": return SZL[sp.sz]+" male thread (BSP)";
+    case "thf": return SZL[sp.sz]+" female thread (BSP)";
+    case "sock": return "solvent socket for "+SZL[sp.sz]+" PVC";
+    case "comp": return "compression for "+sp.sz+"mm HDPE";
+    case "bcomp": return "brass compression for "+sp.sz+"mm PE-AL-PE";
+    case "fus": return "fusion socket for "+sp.sz+"mm PPR";
+    case "pend": return "open "+SYS[sp.sys].szl(sp.sz)+" "+sp.sys.toUpperCase()+" pipe end";
+    case "free": return "free starting point";
+  }
+  return "?";
+}
+function match(a,b){
+  const pair=(x,y,ta,tb)=>x.t===ta&&y.t===tb;
+  if(pair(a,b,"thm","thf")||pair(a,b,"thf","thm")) return a.sz===b.sz;
+  const dual=[["sock","pvc"],["comp","hdpe"],["bcomp","palpe"],["fus","ppr"]];
+  for(const [pt,sys] of dual){
+    if(a.t===pt&&b.t==="pend") return b.sys===sys&&a.sz===b.sz;
+    if(b.t===pt&&a.t==="pend") return a.sys===sys&&a.sz===b.sz;
+  }
+  if(a.t==="free"&&b.t==="pend") return true;
+  if(b.t==="free"&&a.t==="pend") return true;
+  if(a.t==="free"&&b.t==="thm") return true;   // GI pipe from a free start
+  if(b.t==="free"&&a.t==="thm") return true;
+  return false;
+}
+function methodOf(a,b){
+  const ts=[a.t,b.t];
+  if(ts.includes("free")) return null;
+  if(ts.includes("sock")) return "solvent";
+  if(ts.includes("comp")) return "compression";
+  if(ts.includes("bcomp")) return "brass-compression";
+  if(ts.includes("fus")) return "fusion";
+  if(ts.includes("thm")||ts.includes("thf")) return "thread";
+  return null;
+}
+const METHODS = {
+  "solvent":{name:"Solvent-weld (PVC glue)",how:"Cut square, deburr, dry-fit first. Wipe both surfaces, apply PVC solvent cement to pipe and socket, push in with a slight twist, hold 30 s. Full strength in ~24 h. You cannot undo this joint."},
+  "thread":{name:"Threaded (BSP)",how:"Wrap PTFE (thread seal) tape 6–10 turns clockwise around the male thread, then tighten by hand plus 1–2 turns with a wrench. Undoable — good for taps and future changes."},
+  "compression":{name:"HDPE compression",how:"Cut pipe square, push it past the O-ring until it stops, then hand-tighten the nut plus a quarter turn with a spanner. No glue, no tools to buy. Undoable."},
+  "brass-compression":{name:"PE-AL-PE brass compression",how:"Slide nut and ring over the pipe, push onto the fitting insert, tighten nut with two spanners. Undoable."},
+  "fusion":{name:"PPR heat fusion",how:"Needs a PPR welding iron (kedai rents ~RM20–40/day). Heat pipe and fitting on the iron ~5 s, push together, hold still 15 s. Permanent, very strong."}
+};
+
+/* fittings */
+const DEFS=[];
+function def(id,sys,name,store,price,ports,geo,note){DEFS.push({id,sys,name,store,price,ports,geo,note});}
+const T3=["12","34","1"];
+for(const s of T3){const L=SZL[s];
+  def("pvc-sock-"+s,"pvc","PVC socket "+L,"Soket PVC "+L,{ "12":1,"34":1.5,"1":2.5}[s],[sock(s),sock(s)],"inline");
+  def("pvc-elbow-"+s,"pvc","PVC elbow 90° "+L,"Elbow PVC "+L,{ "12":1.2,"34":1.8,"1":3}[s],[sock(s),sock(s)],"elbow");
+  def("pvc-tee-"+s,"pvc","PVC equal tee "+L,"Tee PVC "+L,{ "12":1.5,"34":2.5,"1":4}[s],[sock(s),sock(s),sock(s)],"tee");
+  def("pvc-vs-"+s,"pvc","PVC valve socket "+L,"Valve socket PVC "+L+" (VS)",{ "12":1.2,"34":1.8,"1":2.8}[s],[sock(s),thm(s)],"inline","Glues to PVC, screws into any "+L+" female thread. The standard PVC→thread transition.");
+  def("pvc-fs-"+s,"pvc","PVC faucet socket "+L+" (brass thread)","Faucet socket PVC "+L+" (FS, benang tembaga)",{ "12":4.5,"34":6.5,"1":9.5}[s],[sock(s),thf(s)],"inline","Glues to PVC, gives a brass female thread — screw a tap or male fitting into it.");
+  def("pvc-valve-"+s,"pvc","PVC ball valve "+L,"Ball valve PVC "+L,{ "12":7,"34":9,"1":14}[s],[sock(s),sock(s)],"inline","Shut-off point. Glue both sides.");
+  def("pvc-cap-"+s,"pvc","PVC end cap "+L,"End cap PVC "+L,{ "12":1,"34":1.5,"1":2.5}[s],[sock(s)],"end");
+  def("gi-sock-"+s,"gi","GI socket "+L,"Soket GI "+L,{ "12":3,"34":4.5,"1":6.5}[s],[thf(s),thf(s)],"inline");
+  def("gi-elbow-"+s,"gi","GI elbow 90° "+L,"Elbow GI "+L,{ "12":4,"34":5.5,"1":8.5}[s],[thf(s),thf(s)],"elbow");
+  def("gi-tee-"+s,"gi","GI equal tee "+L,"Tee GI "+L,{ "12":5,"34":7,"1":10}[s],[thf(s),thf(s),thf(s)],"tee");
+  def("gi-nipple-"+s,"gi","GI barrel nipple "+L,"Nipple GI "+L,{ "12":2.5,"34":3.5,"1":5}[s],[thm(s),thm(s)],"inline","Short male-both-ends piece to join two female fittings.");
+  def("gi-union-"+s,"gi","GI union "+L,"Union GI "+L,{ "12":9,"34":12,"1":18}[s],[thf(s),thf(s)],"inline","Lets you disconnect the line later without unscrewing everything.");
+  def("gi-valve-"+s,"brass","Brass gate valve "+L,"Gate valve tembaga "+L,{ "12":18,"34":25,"1":38}[s],[thf(s),thf(s)],"inline","Shut-off point on threaded lines.");
+  def("gi-plug-"+s,"gi","GI plug "+L,"Plug GI "+L,{ "12":2.5,"34":3,"1":4}[s],[thm(s)],"end");
+}
+for(const [b,sm] of [["34","12"],["1","34"],["1","12"]]){
+  def("pvc-red-"+b+"-"+sm,"pvc","PVC reducing socket "+SZL[b]+"→"+SZL[sm],"Soket reducer PVC "+SZL[b]+"×"+SZL[sm],1.8,[sock(b),sock(sm)],"inline","Steps PVC down a size.");
+  def("gi-bush-"+b+"-"+sm,"gi","GI reducing bush "+SZL[b]+"→"+SZL[sm],"Bush GI "+SZL[b]+"×"+SZL[sm],3,[thm(b),thf(sm)],"inline","Male "+SZL[b]+" outside, female "+SZL[sm]+" inside — steps a thread down a size.");
+}
+for(const s of SYS.hdpe.sizes){const t=SYS.hdpe.thread[s];
+  def("hd-coup-"+s,"hdpe","HDPE compression coupler "+s+"mm","Coupler poly "+s+"mm",{ "20":5,"25":7,"32":10}[s],[comp(s),comp(s)],"inline");
+  def("hd-elbow-"+s,"hdpe","HDPE compression elbow "+s+"mm","Elbow poly "+s+"mm",{ "20":7,"25":9,"32":13}[s],[comp(s),comp(s)],"elbow");
+  def("hd-tee-"+s,"hdpe","HDPE compression tee "+s+"mm","Tee poly "+s+"mm",{ "20":9,"25":12,"32":17}[s],[comp(s),comp(s),comp(s)],"tee");
+  def("hd-ma-"+s,"hdpe","HDPE male adaptor "+s+"mm × "+SZL[t],"Male adaptor poly "+s+"mm×"+SZL[t],{ "20":4,"25":5,"32":7}[s],[comp(s),thm(t)],"inline","HDPE→thread transition (male side).");
+  def("hd-fa-"+s,"hdpe","HDPE female adaptor "+s+"mm × "+SZL[t],"Female adaptor poly "+s+"mm×"+SZL[t],{ "20":5,"25":6,"32":8}[s],[comp(s),thf(t)],"inline","HDPE→thread transition (female side).");
+  def("hd-plug-"+s,"hdpe","HDPE end plug "+s+"mm","End plug poly "+s+"mm",{ "20":4,"25":5,"32":7}[s],[comp(s)],"end");
+}
+for(const [b,sm] of [["25","20"],["32","25"],["32","20"]])
+  def("hd-red-"+b+"-"+sm,"hdpe","HDPE reducing coupler "+b+"→"+sm+"mm","Reducer poly "+b+"×"+sm+"mm",8,[comp(b),comp(sm)],"inline","Steps poly pipe down a size.");
+for(const s of SYS.palpe.sizes){const t=SYS.palpe.thread[s];
+  def("pa-coup-"+s,"palpe","PE-AL-PE coupler "+s+"mm (brass)","Coupler PE-AL-PE "+s+"mm",{ "16":6,"20":8}[s],[bcomp(s),bcomp(s)],"inline");
+  def("pa-elbow-"+s,"palpe","PE-AL-PE elbow "+s+"mm (brass)","Elbow PE-AL-PE "+s+"mm",{ "16":7,"20":9}[s],[bcomp(s),bcomp(s)],"elbow");
+  def("pa-tee-"+s,"palpe","PE-AL-PE tee "+s+"mm (brass)","Tee PE-AL-PE "+s+"mm",{ "16":9,"20":12}[s],[bcomp(s),bcomp(s),bcomp(s)],"tee");
+  def("pa-ma-"+s,"palpe","PE-AL-PE male adaptor "+s+"mm × "+SZL[t],"Male adaptor PE-AL-PE "+s+"mm",{ "16":5,"20":7}[s],[bcomp(s),thm(t)],"inline","PE-AL-PE→thread transition (male side).");
+  def("pa-fa-"+s,"palpe","PE-AL-PE female adaptor "+s+"mm × "+SZL[t],"Female adaptor PE-AL-PE "+s+"mm",{ "16":6,"20":8}[s],[bcomp(s),thf(t)],"inline","PE-AL-PE→thread transition (female side).");
+}
+for(const s of SYS.ppr.sizes){const t=SYS.ppr.thread[s];
+  def("ppr-sock-"+s,"ppr","PPR socket "+s+"mm","Soket PPR "+s+"mm",{ "20":1,"25":1.5,"32":2.5}[s],[fus(s),fus(s)],"inline");
+  def("ppr-elbow-"+s,"ppr","PPR elbow 90° "+s+"mm","Elbow PPR "+s+"mm",{ "20":1.5,"25":2,"32":3}[s],[fus(s),fus(s)],"elbow");
+  def("ppr-tee-"+s,"ppr","PPR equal tee "+s+"mm","Tee PPR "+s+"mm",{ "20":2,"25":3,"32":4.5}[s],[fus(s),fus(s),fus(s)],"tee");
+  def("ppr-ma-"+s,"ppr","PPR male adaptor "+s+"mm × "+SZL[t]+" (brass insert)","Male adaptor PPR "+s+"mm",{ "20":6,"25":8,"32":11}[s],[fus(s),thm(t)],"inline","PPR→thread transition (male side).");
+  def("ppr-fa-"+s,"ppr","PPR female adaptor "+s+"mm × "+SZL[t]+" (brass insert)","Female adaptor PPR "+s+"mm",{ "20":7,"25":9,"32":12}[s],[fus(s),thf(t)],"inline","PPR→thread transition (female side).");
+  def("ppr-cap-"+s,"ppr","PPR end cap "+s+"mm","End cap PPR "+s+"mm",1.5,[fus(s)],"end");
+}
+def("tap-bib","brass","Bib tap ½″ (garden/wall tap)","Pili bib tap ½″",12,[thm("12")],"end","Standard Malaysian wall tap. Its male thread screws into any ½″ female port.");
+def("tap-ball","brass","Ball bib tap ½″ (quarter-turn)","Pili ball bib ½″ stainless",22,[thm("12")],"end","Smoother quarter-turn tap; same ½″ male inlet.");
+const DEFBY = Object.fromEntries(DEFS.map(d=>[d.id,d]));
+
+const STARTS = {
+  wallf:{name:"Existing wall point — ½″ female thread",store:"(what most Malaysian homes have at a tap point)",port:thf("12"),
+         note:"You removed the old tap; a female socket faces you."},
+  wallm:{name:"Exposed pipe stub — ½″ male thread",store:"(a capped-off GI/PVC stub with male thread)",port:thm("12"),note:""},
+  tank: {name:"Water tank outlet — ¾″ male thread",store:"(tank connector / outlet stub on a poly tank)",port:thm("34"),note:""},
+  free: {name:"Free start — begin with any pipe",store:"(plan a run on its own)",port:{t:"free"},note:""}
+};
+
+/* ================= state ================= */
+let root=null, nid=0, selPort=null, selNode=null, undoStack=[];
+const $=id=>document.getElementById(id);
+
+function mkNode(kind,data,meta){return {id:++nid,kind,data,meta:meta||{},children:{},parent:null,parentPort:null,joint:null,via:0};}
+
+function portsOf(n){ // [{key,spec}]
+  if(n.kind==="start") return [{key:0,spec:STARTS[n.data].port}];
+  if(n.kind==="pipe") return [{key:0,spec:pipeEndSpec(n.data.sys,n.data.sz)}];
+  const d=DEFBY[n.data];
+  const out=[];
+  const rest=d.ports.map((sp,i)=>({i,sp})).filter(p=>p.i!==n.via);
+  if(d.geo==="tee"){ out.push({key:rest[0].i,spec:rest[0].sp,role:"run"}); out.push({key:rest[1].i,spec:rest[1].sp,role:"branch"}); }
+  else rest.forEach(p=>out.push({key:p.i,spec:p.sp}));
+  return out;
+}
+function attach(parent,portKey,child){
+  pushUndo();
+  child.parent=parent; child.parentPort=portKey;
+  parent.children[portKey]=child;
+  const psp = portsOf(parent).find(p=>p.key===portKey).spec;
+  const csp = child.kind==="pipe" ? pipeEndSpec(child.data.sys,child.data.sz) : DEFBY[child.data].ports[child.via];
+  child.joint = methodOf(psp,csp);
+  return child;
+}
+function removeNode(n){
+  if(!n.parent) return;
+  pushUndo();
+  delete n.parent.children[n.parentPort];
+  selNode=null; selPort=null;
+}
+function pushUndo(){ undoStack.push(serialize(root)); if(undoStack.length>60) undoStack.shift(); }
+function serialize(n){
+  if(!n) return null;
+  const o={k:n.kind,d:n.data,m:n.meta,v:n.via,c:{}};
+  for(const k in n.children) o.c[k]=serialize(n.children[k]);
+  return o;
+}
+function build(o){
+  if(!o) return null;
+  const n=mkNode(o.k,o.d,o.m); n.via=o.v||0;
+  for(const k in o.c||{}){
+    const c=build(o.c[k]);
+    c.parent=n; c.parentPort=isNaN(+k)?k:+k; n.children[c.parentPort]=c;
+    const psp=portsOf(n).find(p=>p.key===c.parentPort).spec;
+    const csp=c.kind==="pipe"?pipeEndSpec(c.data.sys,c.data.sz):DEFBY[c.data].ports[c.via];
+    c.joint=methodOf(psp,csp);
+  }
+  return n;
+}
+
+/* ================= layout & render ================= */
+const DIRV=[[1,0],[0,1],[-1,0],[0,-1]];
+const rot=(d,t)=>((d+t)%4+4)%4;
+function widthFor(sp){
+  const map={"12":8,"34":10,"1":12,"16":7,"20":8,"25":10,"32":12};
+  return map[sp.sz]||9;
+}
+function layout(n,p0,dIn,out){
+  // computes drawing primitives + port positions; out = {shapes:[], ports:[], labels:[]}
+  n._p0=p0; n._d=dIn;
+  const D=DIRV[dIn], pos=(p,d,len)=>[p[0]+DIRV[d][0]*len,p[1]+DIRV[d][1]*len];
+  let exits=[]; // {key,spec,pos,dir}
+  if(n.kind==="start"){
+    out.shapes.push({t:"start",n,p:p0,d:dIn});
+    exits=[{key:0,spec:STARTS[n.data].port,pos:p0,dir:dIn}];
+  } else if(n.kind==="pipe"){
+    const px=Math.max(30,Math.min(340,n.meta.L*M2PX));
+    const p1=pos(p0,dIn,px);
+    out.shapes.push({t:"pipe",n,a:p0,b:p1,d:dIn});
+    out.labels.push({p:pos([ (p0[0]+p1[0])/2,(p0[1]+p1[1])/2 ], rot(dIn,3), 14+widthFor({sz:n.data.sz})), txt:n.meta.L+" m"});
+    exits=[{key:0,spec:pipeEndSpec(n.data.sys,n.data.sz),pos:p1,dir:dIn}];
+  } else {
+    const d=DEFBY[n.data];
+    if(d.geo==="inline"||d.geo==="end"){
+      const len=d.geo==="end"?16:26;
+      const p1=pos(p0,dIn,len);
+      out.shapes.push({t:d.geo==="end"?"endfit":"inline",n,a:p0,b:p1,d:dIn,def:d});
+      if(d.geo==="inline"){ const other=d.ports.map((sp,i)=>i).find(i=>i!==n.via); exits=[{key:other,spec:d.ports[other],pos:p1,dir:dIn}]; }
+    } else if(d.geo==="elbow"){
+      const c=pos(p0,dIn,16), nd=rot(dIn,n.meta.turn||1), e=pos(c,nd,16);
+      out.shapes.push({t:"elbow",n,a:p0,c,b:e,def:d});
+      const other=n.via===0?1:0;
+      exits=[{key:other,spec:d.ports[other],pos:e,dir:nd}];
+    } else if(d.geo==="tee"){
+      const r=pos(p0,dIn,40), m=pos(p0,dIn,20), bd=rot(dIn,n.meta.branch||1), b=pos(m,bd,18);
+      out.shapes.push({t:"tee",n,a:p0,b:r,m,bp:b,def:d});
+      const ps=portsOf(n);
+      exits=[{key:ps[0].key,spec:ps[0].spec,pos:r,dir:dIn},{key:ps[1].key,spec:ps[1].spec,pos:b,dir:bd}];
+    }
+  }
+  n._exits=exits;
+  for(const ex of exits){
+    const child=n.children[ex.key];
+    if(child) layout(child,ex.pos,ex.dir,out);
+    else out.ports.push({node:n,key:ex.key,spec:ex.spec,pos:ex.pos,dir:ex.dir});
+  }
+}
+
+let view={x:0,y:0,k:1};
+function svgEl(tag,attrs){const e=document.createElementNS("http://www.w3.org/2000/svg",tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;}
+function render(){
+  const world=$("world"); world.innerHTML="";
+  world.setAttribute("transform",`translate(${view.x},${view.y}) scale(${view.k})`);
+  if(!root){ renderPanels(); return; }
+  const out={shapes:[],ports:[],labels:[]};
+  layout(root,[0,0],0,out);
+  const line=(a,b,w,color,cap)=>svgEl("line",{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:color,"stroke-width":w,"stroke-linecap":cap||"round"});
+  for(const s of out.shapes){
+    const g=svgEl("g",{});
+    let title="", hitShape=null;
+    if(s.t==="start"){
+      const st=STARTS[s.n.data]; title=st.name;
+      if(s.n.data==="tank"){
+        g.appendChild(svgEl("rect",{x:s.p[0]-58,y:s.p[1]-42,width:52,height:70,rx:8,fill:"var(--panel2)",stroke:"var(--mut)","stroke-width":2.5}));
+        g.appendChild(svgEl("line",{x1:s.p[0]-52,y1:s.p[1]-22,x2:s.p[0]-12,y2:s.p[1]-22,stroke:"#2E7BD6","stroke-width":2,opacity:.7}));
+        g.appendChild(line([s.p[0]-8,s.p[1]],[s.p[0]+8,s.p[1]],10,"var(--mut)","butt"));
+      } else if(s.n.data==="free"){
+        g.appendChild(svgEl("circle",{cx:s.p[0],cy:s.p[1],r:12,fill:"none",stroke:"var(--mut)","stroke-width":2,"stroke-dasharray":"4 3"}));
+      } else {
+        const wall=svgEl("line",{x1:s.p[0]-4,y1:s.p[1]-22,x2:s.p[0]-4,y2:s.p[1]+22,stroke:"var(--mut)","stroke-width":7,"stroke-linecap":"round",opacity:.8});
+        g.appendChild(wall);
+        for(let i=-2;i<3;i++) g.appendChild(svgEl("line",{x1:s.p[0]-8,y1:s.p[1]+i*9-2,x2:s.p[0]-14,y2:s.p[1]+i*9+5,stroke:"var(--mut)","stroke-width":1.6,opacity:.6}));
+        g.appendChild(line(s.p,[s.p[0]+8,s.p[1]],10,"var(--mut)","butt"));
+      }
+      hitShape=svgEl("circle",{cx:s.p[0],cy:s.p[1],r:24,class:"hit"});
+    } else if(s.t==="pipe"){
+      const sys=SYS[s.n.data.sys], w=widthFor({sz:s.n.data.sz});
+      title=sys.label+" "+sys.szl(s.n.data.sz)+" — "+s.n.meta.L+" m";
+      g.appendChild(line(s.a,s.b,w+2,"rgba(0,0,0,.28)"));
+      g.appendChild(line(s.a,s.b,w,sys.color));
+      if(s.n.data.sys==="hdpe") g.appendChild(line(s.a,s.b,1.6,"#2E7BD6"));
+      if(s.n.data.sys==="palpe") g.appendChild(line(s.a,s.b,1.2,"#9AA3AB"));
+      if(s.n.data.sys==="gi"){ // thread ticks at ends
+        for(const p of [s.a,s.b]){
+          const dd=DIRV[s.d], sign=(p===s.a?1:-1);
+          for(let i=1;i<=3;i++) g.appendChild(svgEl("line",{x1:p[0]+dd[0]*i*3*sign-dd[1]*(w/2),y1:p[1]+dd[1]*i*3*sign+dd[0]*(w/2),x2:p[0]+dd[0]*i*3*sign+dd[1]*(w/2),y2:p[1]+dd[1]*i*3*sign-dd[0]*(w/2),stroke:"rgba(0,0,0,.35)","stroke-width":1}));
+        }
+      }
+      hitShape=line(s.a,s.b,w+14,"transparent"); hitShape.setAttribute("class","hit");
+    } else if(s.t==="inline"||s.t==="endfit"){
+      const d=s.def, sys=SYS[d.sys], w=widthFor(d.ports[0])+5;
+      title=d.name;
+      g.appendChild(line(s.a,s.b,w+2,"rgba(0,0,0,.3)","butt"));
+      g.appendChild(line(s.a,s.b,w,sys.fit,"butt"));
+      if(d.id.startsWith("tap")){
+        const mid=[(s.a[0]+s.b[0])/2,(s.a[1]+s.b[1])/2];
+        g.appendChild(svgEl("circle",{cx:mid[0],cy:mid[1]-13,r:6,fill:"none",stroke:sys.fit,"stroke-width":3}));
+        g.appendChild(svgEl("line",{x1:mid[0],y1:mid[1]-8,x2:mid[0],y2:mid[1],stroke:sys.fit,"stroke-width":3}));
+        g.appendChild(svgEl("line",{x1:s.b[0],y1:s.b[1],x2:s.b[0],y2:s.b[1]+10,stroke:sys.fit,"stroke-width":3,"stroke-linecap":"round"}));
+      }
+      if(d.id.includes("valve")){
+        const mid=[(s.a[0]+s.b[0])/2,(s.a[1]+s.b[1])/2];
+        g.appendChild(svgEl("line",{x1:mid[0],y1:mid[1],x2:mid[0],y2:mid[1]-12,stroke:sys.fit,"stroke-width":3}));
+        g.appendChild(svgEl("line",{x1:mid[0]-6,y1:mid[1]-12,x2:mid[0]+6,y2:mid[1]-12,stroke:sys.fit,"stroke-width":3,"stroke-linecap":"round"}));
+      }
+      hitShape=line(s.a,s.b,w+12,"transparent"); hitShape.setAttribute("class","hit");
+    } else if(s.t==="elbow"){
+      const d=s.def, sys=SYS[d.sys], w=widthFor(d.ports[0])+5;
+      title=d.name;
+      const path=`M ${s.a[0]} ${s.a[1]} L ${s.c[0]} ${s.c[1]} L ${s.b[0]} ${s.b[1]}`;
+      g.appendChild(svgEl("path",{d:path,fill:"none",stroke:"rgba(0,0,0,.3)","stroke-width":w+2,"stroke-linejoin":"round","stroke-linecap":"butt"}));
+      g.appendChild(svgEl("path",{d:path,fill:"none",stroke:sys.fit,"stroke-width":w,"stroke-linejoin":"round","stroke-linecap":"butt"}));
+      hitShape=svgEl("path",{d:path,fill:"none",stroke:"transparent","stroke-width":w+12,class:"hit"});
+    } else if(s.t==="tee"){
+      const d=s.def, sys=SYS[d.sys], w=widthFor(d.ports[0])+5;
+      title=d.name;
+      for(const [a,b] of [[s.a,s.b],[s.m,s.bp]]){
+        g.appendChild(line(a,b,w+2,"rgba(0,0,0,.3)","butt"));
+        g.appendChild(line(a,b,w,sys.fit,"butt"));
+      }
+      hitShape=line(s.a,s.b,w+12,"transparent"); hitShape.setAttribute("class","hit");
+    }
+    const t=svgEl("title",{}); t.textContent=title; g.appendChild(t);
+    if(hitShape){
+      hitShape.addEventListener("click",ev=>{ev.stopPropagation();selNode=s.n;selPort=null;renderAll();});
+      g.appendChild(hitShape);
+    }
+    if(selNode===s.n){
+      const bb=[s.a||s.p,s.b||s.p];
+      const x=Math.min(bb[0][0],bb[1][0])-12,y=Math.min(bb[0][1],bb[1][1])-12;
+      g.appendChild(svgEl("rect",{x,y,width:Math.abs(bb[1][0]-bb[0][0])+24,height:Math.abs(bb[1][1]-bb[0][1])+24,rx:6,class:"node-sel","stroke-width":1.5}));
+    }
+    world.appendChild(g);
+  }
+  // joint ticks
+  const walk=(n)=>{for(const k in n.children){const c=n.children[k];
+    if(c.joint){const p=c._p0,dd=DIRV[c._d];
+      world.appendChild(svgEl("line",{x1:p[0]-dd[1]*9,y1:p[1]+dd[0]*9,x2:p[0]+dd[1]*9,y2:p[1]-dd[0]*9,class:"jointtick","stroke-width":2}));}
+    walk(c);}};
+  walk(root);
+  for(const l of out.labels){
+    const t=svgEl("text",{x:l.p[0],y:l.p[1],class:"lenlabel","text-anchor":"middle"}); t.textContent=l.txt; world.appendChild(t);
+  }
+  for(const p of out.ports){
+    const g=svgEl("g",{});
+    const halo=svgEl("circle",{cx:p.pos[0],cy:p.pos[1],r:8,class:"port-halo"});
+    const dot=svgEl("circle",{cx:p.pos[0],cy:p.pos[1],r:7,class:"port-dot"+(selPort&&selPort.node===p.node&&selPort.key===p.key?" sel":"")});
+    const t=svgEl("title",{}); t.textContent="Open: "+specLabel(p.spec)+" — click to attach";
+    dot.appendChild(t);
+    dot.addEventListener("click",ev=>{ev.stopPropagation();selPort=p;selNode=null;renderAll();});
+    g.appendChild(halo);g.appendChild(dot);world.appendChild(g);
+  }
+  window._ports=out.ports;
+  renderPanels();
+}
+function renderAll(){render();}
+
+/* ================= attach panel ================= */
+function sysOfSpec(sp){
+  return {sock:"pvc",comp:"hdpe",bcomp:"palpe",fus:"ppr"}[sp.t] || (sp.t==="pend"?sp.sys:null);
+}
+function candidatePipes(spec){
+  const out=[];
+  for(const sys in SYS){
+    if(!SYS[sys].sizes.length) continue;
+    for(const sz of SYS[sys].sizes)
+      if(match(spec,pipeEndSpec(sys,sz))) out.push({sys,sz});
+  }
+  return out;
+}
+function candidateFits(spec){
+  const out=[];
+  for(const d of DEFS){
+    for(let i=0;i<d.ports.length;i++){
+      if(match(spec,d.ports[i])){ out.push({def:d,via:i}); break; }
+    }
+  }
+  return out;
+}
+function pipePricePerM(sys,sz){const S=SYS[sys];return S.perM?S.perM[sz]:S.perUnit[sz]/S.unitLen;}
+
+function renderPanels(){
+  const el=$("attach"), lt=$("lefttitle");
+  el.innerHTML="";
+  if(!root){
+    lt.textContent="Start";
+    el.insertAdjacentHTML("beforeend",`<p class="ctx">Where does your water come from? Pick a starting point — then keep clicking the <b>orange dots</b> to snap parts on.</p>`);
+    for(const id in STARTS){
+      const s=STARTS[id];
+      const c=document.createElement("div"); c.className="card startcard"; c.tabIndex=0; c.setAttribute("role","button");
+      c.innerHTML=`<div class="nm">${s.name}</div><div class="store">${s.store}</div>${s.note?`<div class="note">${s.note}</div>`:""}`;
+      const go=()=>{pushUndo();root=mkNode("start",id);selPort=null;fitView();renderAll();};
+      c.addEventListener("click",go);
+      c.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
+      el.appendChild(c);
+    }
+    legend(el);
+    updateBOM();
+    return;
+  }
+  if(selNode){
+    lt.textContent="Selected part";
+    let nm,store,price,note;
+    if(selNode.kind==="start"){const s=STARTS[selNode.data];nm=s.name;store=s.store;price=null;note=s.note;}
+    else if(selNode.kind==="pipe"){const S=SYS[selNode.data.sys];nm=S.label+" "+S.szl(selNode.data.sz)+" — "+selNode.meta.L+" m";store=S.pipeStore(selNode.data.sz);price=(pipePricePerM(selNode.data.sys,selNode.data.sz)*selNode.meta.L);note="";}
+    else {const d=DEFBY[selNode.data];nm=d.name;store="Ask for: "+d.store;price=d.price;note=d.note||"";}
+    el.insertAdjacentHTML("beforeend",`<div class="card"><div class="nm">${nm}</div><div class="store">${store||""}</div>
+      ${price!=null?`<div class="price" style="margin-top:4px">≈ RM ${price.toFixed(2)}</div>`:""}
+      ${note?`<div class="note">${note}</div>`:""}
+      ${selNode.joint?`<div class="note">Joined by: <b>${METHODS[selNode.joint].name}</b></div>`:""}</div>`);
+    if(selNode.parent){
+      const b=document.createElement("button");b.className="btn dangerbtn";b.textContent="Remove this part (and everything after it)";
+      b.addEventListener("click",()=>{removeNode(selNode);renderAll();});
+      el.appendChild(b);
+    } else {
+      el.insertAdjacentHTML("beforeend",`<p class="note">This is your starting point — use Clear (top right) to restart.</p>`);
+    }
+    const back=document.createElement("button");back.className="btn";back.style.marginTop="8px";back.textContent="Done";
+    back.addEventListener("click",()=>{selNode=null;renderAll();});
+    el.appendChild(back);
+    updateBOM();
+    return;
+  }
+  if(!selPort){
+    lt.textContent="Attach";
+    el.insertAdjacentHTML("beforeend",`<p class="ctx">Click an <b>orange dot</b> on the canvas — I'll show every part that genuinely fits there (and hide the ones that don't, so you never buy a wrong fitting).</p>`);
+    legend(el);
+    updateBOM();
+    return;
+  }
+  lt.textContent="Attach here";
+  const spec=selPort.spec;
+  el.insertAdjacentHTML("beforeend",`<p class="ctx">Open connection: <b>${specLabel(spec)}</b>. Everything below fits it.</p>`);
+  const pipes=candidatePipes(spec), fits=candidateFits(spec);
+  const ctxSys=sysOfSpec(spec);
+
+  if(pipes.length){
+    el.insertAdjacentHTML("beforeend",`<div class="grouph">Pipe</div>`);
+    for(const p of pipes){
+      const S=SYS[p.sys];
+      const c=document.createElement("div");c.className="card";
+      c.innerHTML=`<div class="nm"><span class="swatch" style="background:${S.color}"></span>${S.label} ${S.szl(p.sz)}</div>
+        <div class="store">${S.pipeStore(p.sz)}</div>
+        <div class="row"><label>Length <input class="len" type="number" min="0.1" max="30" step="0.1" value="1.0"> m</label>
+        <span class="price">≈ RM ${pipePricePerM(p.sys,p.sz).toFixed(2)}/m</span>
+        <button class="mini add">Add pipe</button></div>`;
+      c.querySelector(".add").addEventListener("click",()=>{
+        const L=Math.max(.1,Math.min(30,parseFloat(c.querySelector(".len").value)||1));
+        const node=mkNode("pipe",{sys:p.sys,sz:p.sz},{L:Math.round(L*10)/10});
+        attach(selPort.node,selPort.key,node);
+        advanceSelection(node);renderAll();
+      });
+      el.appendChild(c);
+    }
+  }
+  const groups=[["Fittings",fits.filter(f=>f.def.geo!=="end"&&(sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def))],
+                ["Change material or size",fits.filter(f=>f.def.geo!=="end"&&!( (sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def) ))],
+                ["Finish the line (taps, caps)",fits.filter(f=>f.def.geo==="end")]];
+  for(const [gname,list] of groups){
+    if(!list.length) continue;
+    el.insertAdjacentHTML("beforeend",`<div class="grouph">${gname}</div>`);
+    for(const f of list){
+      const d=f.def,S=SYS[d.sys];
+      const c=document.createElement("div");c.className="card";
+      c.innerHTML=`<div class="nm"><span class="swatch" style="background:${S.fit}"></span>${d.name}</div>
+        <div class="store">Ask for: ${d.store}</div>
+        ${d.note?`<div class="note">${d.note}</div>`:""}
+        <div class="row"><span class="price">≈ RM ${d.price.toFixed(2)}</span><span class="rowbtns"></span></div>`;
+      const btns=c.querySelector(".rowbtns");
+      const addWith=(meta)=>{const node=mkNode("fit",d.id,meta);node.via=f.via;attach(selPort.node,selPort.key,node);advanceSelection(node);renderAll();};
+      if(d.geo==="elbow"){
+        mk(btns,"↰ turn left",()=>addWith({turn:-1}));
+        mk(btns,"↱ turn right",()=>addWith({turn:1}));
+      } else if(d.geo==="tee"){
+        mk(btns,"⊢ branch left",()=>addWith({branch:-1}));
+        mk(btns,"⊣ branch right",()=>addWith({branch:1}));
+      } else mk(btns,"Add",()=>addWith({}),true);
+      el.appendChild(c);
+    }
+  }
+  if(!pipes.length&&!fits.length)
+    el.insertAdjacentHTML("beforeend",`<p class="empty">Nothing in the catalog fits this port — remove the last part and try a different transition.</p>`);
+  updateBOM();
+}
+function mk(parent,label,fn,primary){const b=document.createElement("button");b.className="mini"+(primary?" add":"");b.textContent=label;b.addEventListener("click",fn);parent.appendChild(b);}
+function isTransition(d){
+  const kinds=new Set(d.ports.map(p=>p.t));
+  if(kinds.size>1&&!(kinds.has("thm")&&kinds.has("thf")&&kinds.size===2)) return true; // mixed system = adapter
+  if(kinds.has("thm")&&kinds.has("thf")) return d.id.includes("bush"); // bush = size transition
+  const szs=new Set(d.ports.map(p=>p.sz)); return szs.size>1;
+}
+function advanceSelection(node){
+  const ps=portsOf(node);
+  if(ps.length){ selPort={node,key:ps[0].key,spec:ps[0].spec}; }
+  else selPort=null;
+  selNode=null;
+}
+function legend(el){
+  el.insertAdjacentHTML("beforeend",`<div class="grouph">How each joint is made</div>`);
+  for(const m in METHODS){
+    const d=document.createElement("details");d.className="joint";
+    d.innerHTML=`<summary>${METHODS[m].name}</summary><p>${METHODS[m].how}</p>`;
+    el.appendChild(d);
+  }
+}
+
+/* ================= BOM ================= */
+function collect(){
+  const pipes={},fits={},joints={};
+  const walk=n=>{if(!n)return;
+    if(n.kind==="pipe"){const k=n.data.sys+"|"+n.data.sz;pipes[k]=(pipes[k]||0)+n.meta.L;}
+    if(n.kind==="fit"){fits[n.data]=(fits[n.data]||0)+1;}
+    if(n.joint)joints[n.joint]=(joints[n.joint]||0)+1;
+    for(const k in n.children)walk(n.children[k]);};
+  walk(root);
+  return {pipes,fits,joints};
+}
+function updateBOM(){
+  const el=$("bom");el.innerHTML="";
+  if(!root){el.innerHTML=`<p class="empty">Your shopping list builds itself as you snap parts together.</p>`;return;}
+  const {pipes,fits,joints}=collect();
+  let total=0,rows="";
+  const pk=Object.keys(pipes);
+  if(pk.length){
+    rows+=`<tr><td colspan="2"><span class="eyebrow">Pipes</span></td></tr>`;
+    for(const k of pk){
+      const [sys,sz]=k.split("|"),S=SYS[sys],m=Math.round(pipes[k]*10)/10;
+      let buy,cost;
+      if(S.perM){const bm=Math.ceil(m);cost=bm*S.perM[sz];buy=`buy ${bm} m (sold per meter)`;}
+      else {const n=Math.ceil(m/S.unitLen);cost=n*S.perUnit[sz];buy=`buy ${n} × ${S.unitName}`;}
+      total+=cost;
+      rows+=`<tr><td><span class="swatch" style="background:${S.color}"></span>${S.label} ${S.szl(sz)}<div class="sub">${m} m needed → ${buy}</div></td><td class="r">RM ${cost.toFixed(2)}</td></tr>`;
+    }
+  }
+  const fk=Object.keys(fits);
+  if(fk.length){
+    rows+=`<tr><td colspan="2"><span class="eyebrow">Fittings</span></td></tr>`;
+    for(const id of fk){
+      const d=DEFBY[id],q=fits[id],c=q*d.price;total+=c;
+      rows+=`<tr><td>${q} × ${d.name}<div class="sub">ask for: ${d.store}</div></td><td class="r">RM ${c.toFixed(2)}</td></tr>`;
+    }
+  }
+  // consumables
+  let cons="";
+  if(joints["solvent"]){const c=7;total+=c;cons+=`<tr><td>PVC solvent cement (small tin)<div class="sub">covers ~40 joints — you have ${joints["solvent"]}</div></td><td class="r">RM 7.00</td></tr>`;}
+  if(joints["thread"]){const rolls=Math.ceil(joints["thread"]/8),c=rolls*1.5;total+=c;cons+=`<tr><td>${rolls} × PTFE thread seal tape<div class="sub">~8 joints per roll — you have ${joints["thread"]} threaded joints</div></td><td class="r">RM ${c.toFixed(2)}</td></tr>`;}
+  if(joints["fusion"])cons+=`<tr><td>PPR welding iron<div class="sub">rent from kedai ~RM20–40/day (not in total)</div></td><td class="r">—</td></tr>`;
+  if(cons)rows+=`<tr><td colspan="2"><span class="eyebrow">Consumables</span></td></tr>`+cons;
+
+  el.insertAdjacentHTML("beforeend",`<table class="bom">${rows}</table>
+    <div class="total"><span>Estimated total</span><span>RM ${total.toFixed(2)}</span></div>`);
+  const js=Object.entries(joints).map(([m,n])=>`${n} × ${METHODS[m].name.toLowerCase()}`).join(" · ");
+  if(js)el.insertAdjacentHTML("beforeend",`<div class="jsum">Joints to make: ${js}</div>`);
+  if(joints["compression"]||joints["brass-compression"])
+    el.insertAdjacentHTML("beforeend",`<div class="jsum">Compression joints need no glue or tape — just a spanner.</div>`);
+  el.insertAdjacentHTML("beforeend",`<div class="disclaimer">Prices are rough hardware-store estimates (Peninsular Malaysia, 2026) — actual kedai prices vary. Sizes: ½″≈15 mm, ¾″≈20 mm, 1″≈25 mm nominal.</div>`);
+  window._bomText=bomText(pipes,fits,joints,total);
+}
+function bomText(pipes,fits,joints,total){
+  let t="PIPE PLAY — SHOPPING LIST\n==========================\n\nPIPES\n";
+  for(const k in pipes){const [sys,sz]=k.split("|"),S=SYS[sys],m=Math.round(pipes[k]*10)/10;
+    let buy;S.perM?buy=`buy ${Math.ceil(m)} m`:buy=`buy ${Math.ceil(m/S.unitLen)} x ${S.unitName}`;
+    t+=`- ${S.label} ${S.szl(sz)}: ${m} m needed -> ${buy}\n  (${S.pipeStore(sz)})\n`;}
+  t+="\nFITTINGS\n";
+  for(const id in fits){const d=DEFBY[id];t+=`- ${fits[id]} x ${d.name}  [ask for: ${d.store}]\n`;}
+  t+="\nCONSUMABLES\n";
+  if(joints["solvent"])t+="- 1 x PVC solvent cement (small tin)\n";
+  if(joints["thread"])t+=`- ${Math.ceil(joints["thread"]/8)} x PTFE thread seal tape\n`;
+  if(joints["fusion"])t+="- rent PPR welding iron (~RM20-40/day)\n";
+  t+=`\nESTIMATED TOTAL: RM ${total.toFixed(2)} (prices vary by store)\n`;
+  return t;
+}
+
+/* ================= pan/zoom, toolbar ================= */
+const svg=$("canvas");
+let panState=null;
+svg.addEventListener("pointerdown",e=>{if(e.target.closest(".port-dot,.hit"))return;panState={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y};svg.classList.add("panning");svg.setPointerCapture(e.pointerId);});
+svg.addEventListener("pointermove",e=>{if(!panState)return;view.x=panState.vx+(e.clientX-panState.x);view.y=panState.vy+(e.clientY-panState.y);$("world").setAttribute("transform",`translate(${view.x},${view.y}) scale(${view.k})`);});
+svg.addEventListener("pointerup",e=>{if(panState&&Math.abs(e.clientX-panState.x)<4&&Math.abs(e.clientY-panState.y)<4){selPort=null;selNode=null;renderAll();}panState=null;svg.classList.remove("panning");});
+svg.addEventListener("wheel",e=>{e.preventDefault();const f=e.deltaY<0?1.12:0.89;zoomAt(f,e.clientX,e.clientY);},{passive:false});
+function zoomAt(f,cx,cy){
+  const r=svg.getBoundingClientRect(),px=cx-r.left,py=cy-r.top;
+  const k2=Math.max(.25,Math.min(3,view.k*f));
+  view.x=px-(px-view.x)*(k2/view.k);view.y=py-(py-view.y)*(k2/view.k);view.k=k2;
+  $("world").setAttribute("transform",`translate(${view.x},${view.y}) scale(${view.k})`);
+}
+$("zin").addEventListener("click",()=>{const r=svg.getBoundingClientRect();zoomAt(1.2,r.left+r.width/2,r.top+r.height/2);});
+$("zout").addEventListener("click",()=>{const r=svg.getBoundingClientRect();zoomAt(1/1.2,r.left+r.width/2,r.top+r.height/2);});
+$("zfit").addEventListener("click",fitView);
+function fitView(){
+  const r=svg.getBoundingClientRect();
+  if(!root){view={x:r.width*.3,y:r.height*.5,k:1};}
+  else{
+    const out={shapes:[],ports:[],labels:[]};layout(root,[0,0],0,out);
+    let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+    const pts=[];
+    out.shapes.forEach(s=>{["a","b","c","p","m","bp"].forEach(k=>{if(s[k])pts.push(s[k]);});});
+    out.ports.forEach(p=>pts.push(p.pos));
+    if(!pts.length)pts.push([0,0]);
+    pts.forEach(p=>{minx=Math.min(minx,p[0]);maxx=Math.max(maxx,p[0]);miny=Math.min(miny,p[1]);maxy=Math.max(maxy,p[1]);});
+    const pad=70,w=maxx-minx+pad*2,h=maxy-miny+pad*2;
+    const k=Math.max(.3,Math.min(1.6,Math.min(r.width/w,r.height/h)));
+    view={k,x:(r.width-(maxx+minx)*k)/2,y:(r.height-(maxy+miny)*k)/2};
+  }
+  renderAll();
+}
+function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1800);}
+
+$("undo").addEventListener("click",()=>{
+  if(!undoStack.length){toast("Nothing to undo");return;}
+  root=build(undoStack.pop());selPort=null;selNode=null;renderAll();
+});
+$("clear").addEventListener("click",()=>{
+  if(root&&!confirm("Clear the whole assembly?"))return;
+  pushUndo();root=null;selPort=null;selNode=null;fitView();
+});
+$("save").addEventListener("click",()=>{
+  localStorage.setItem("pipeplay-save",JSON.stringify(serialize(root)));toast("Saved in this browser");
+});
+$("load").addEventListener("click",()=>{
+  const s=localStorage.getItem("pipeplay-save");
+  if(!s){toast("No saved assembly yet");return;}
+  pushUndo();root=build(JSON.parse(s));selPort=null;selNode=null;fitView();toast("Loaded");
+});
+$("copy").addEventListener("click",async()=>{
+  if(!window._bomText){toast("Nothing to copy yet");return;}
+  try{await navigator.clipboard.writeText(window._bomText);toast("Shopping list copied — paste it anywhere");}
+  catch(e){prompt("Copy your list:",window._bomText);}
+});
+
+/* ================= examples ================= */
+const P=(sys,sz,L,ch)=>({k:"pipe",d:{sys,sz},m:{L},v:0,c:ch||{}});
+const F_=(id,m,via,ch)=>({k:"fit",d:id,m:m||{},v:via||0,c:ch||{}});
+const EXAMPLES={
+  garden:{k:"start",d:"wallm",m:{},v:0,c:{0:
+    F_("pvc-fs-12",{},1,{0:P("pvc","12",0.3,{0:
+      F_("pvc-valve-12",{},0,{1:P("pvc","12",3,{0:
+        F_("pvc-elbow-12",{turn:1},0,{1:P("pvc","12",0.6,{0:
+          F_("pvc-fs-12",{},0,{1:F_("tap-bib")})})})})})})})}},
+  tank:{k:"start",d:"tank",m:{},v:0,c:{0:
+    F_("hd-fa-25",{},1,{0:P("hdpe","25",8,{0:
+      F_("hd-elbow-25",{turn:1},0,{1:P("hdpe","25",1.5,{0:
+        F_("hd-ma-25",{},0,{1:
+          F_("gi-sock-34",{},0,{1:
+            F_("gi-bush-34-12",{},0,{1:F_("tap-ball")})})})})})})})}},
+  tee:{k:"start",d:"wallm",m:{},v:0,c:{0:
+    F_("pvc-fs-12",{},1,{0:P("pvc","12",1.2,{0:
+      F_("pvc-tee-12",{branch:1},0,{1:P("pvc","12",1.0,{0:
+        F_("pvc-fs-12",{},0,{1:F_("tap-bib")})}),
+      2:P("pvc","12",0.8,{0:
+        F_("pvc-elbow-12",{turn:-1},0,{1:P("pvc","12",0.5,{0:
+          F_("pvc-fs-12",{},0,{1:F_("tap-bib")})})})})})})})}}
+};
+$("examples").addEventListener("change",e=>{
+  const v=e.target.value;e.target.value="";
+  if(!v)return;
+  pushUndo();root=build(JSON.parse(JSON.stringify(EXAMPLES[v])));selPort=null;selNode=null;fitView();
+  toast("Example loaded — click any orange dot to keep building");
+});
+
+/* init */
+fitView();
+</script>
