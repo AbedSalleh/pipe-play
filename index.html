@@ -365,6 +365,7 @@ function bestChainTo(reach,goal){ // goal(spec) -> info object or null
 
 /* ================= state ================= */
 let root=null, nid=0, selPort=null, selNode=null, undoStack=[];
+const openCats=new Set(["pipes"]); // which attach-panel categories stay expanded
 const $=id=>document.getElementById(id);
 
 function mkNode(kind,data,meta){return {id:++nid,kind,data,meta:meta||{},children:{},parent:null,parentPort:null,joint:null,via:0};}
@@ -1211,7 +1212,6 @@ function renderPanels(){
   }
 
   /* pipes */
-  el.insertAdjacentHTML("beforeend",`<div class="grouph">Combine with a pipe</div>`);
   const pipeOptions=[];
   for(const sys in SYS){
     if(!SYS[sys].sizes.length)continue;
@@ -1220,12 +1220,7 @@ function renderPanels(){
       if(best)pipeOptions.push({sys,sz,steps:best.steps});
     }
   }
-  pipeOptions.sort((a,b)=>{
-    const sa=(ctxSys===a.sys?0:1)-(ctxSys===b.sys?0:1);
-    if(sa)return sa;
-    return (a.steps.length-b.steps.length)||(fitPrices(a.steps)-fitPrices(b.steps));
-  });
-  for(const p of pipeOptions){
+  function makePipeCard(p){
     const S=SYS[p.sys];
     const c=document.createElement("div");c.className="card";
     c.innerHTML=`<img class="thumb" alt="" src="${pipeThumb(p.sys,p.sz)}"><div class="ct">
@@ -1243,10 +1238,8 @@ function renderPanels(){
       attach(at.node,at.key,pnode);
       advanceSelection(pnode);refresh();
     });
-    el.appendChild(c);
+    return c;
   }
-  if(!pipeOptions.length)
-    el.insertAdjacentHTML("beforeend",`<p class="empty">No pipe can reach this connection with the adapters in the catalog.</p>`);
 
   /* fittings: every catalog part reachable from here, with its middle chain */
   const fitChains=[];
@@ -1257,7 +1250,6 @@ function renderPanels(){
     });
     if(best)fitChains.push({def:d,via:best.info.via,steps:best.steps});
   }
-  const byRank=(a,b)=>(a.steps.length-b.steps.length)||(fitPrices(a.steps)-fitPrices(b.steps))||(a.def.price-b.def.price);
   function makeFitCard(f){
     const d=f.def;
     const c=document.createElement("div");c.className="card";
@@ -1290,36 +1282,57 @@ function renderPanels(){
     } else mk(btns,"Add",()=>addWith({}),true);
     return c;
   }
-  // near = direct fits, or bridged by a single same-system stub (the everyday cases)
-  const isNear=f=>!f.steps.length||(f.steps.length===1&&f.steps[0].type==="stub"&&f.steps[0].sys===ctxSys);
-  const ends=fitChains.filter(f=>f.def.geo==="end").sort(byRank);
-  const near=fitChains.filter(f=>f.def.geo!=="end"&&isNear(f));
-  const g1=near.filter(f=>(sysOfSpec(f.def.ports[f.via])===ctxSys||f.def.sys===ctxSys)&&!isTransition(f.def)).sort(byRank);
-  const g2=near.filter(f=>!g1.includes(f)).sort(byRank);
-  const far=fitChains.filter(f=>f.def.geo!=="end"&&!isNear(f));
-  const renderGroup=(title,list)=>{
-    if(!list.length)return;
-    el.insertAdjacentHTML("beforeend",`<div class="grouph">${title}</div>`);
-    for(const f of list)el.appendChild(makeFitCard(f));
+  /* categories: parts grouped by what they DO, then by material, then by size */
+  const catOf=d=>{
+    if(d.geo==="end")return "finish";
+    if(d.id.includes("valve"))return "valves";
+    if(d.geo==="elbow")return "elbows";
+    if(d.geo==="tee")return "tees";
+    if(isTransition(d))return "adapters";
+    return "couplers";
   };
-  renderGroup("Add a fitting here",g1);
-  renderGroup("Change material or size (adapters)",g2);
-  if(far.length){
-    el.insertAdjacentHTML("beforeend",`<div class="grouph">Other materials — connector goes in the middle</div>`);
+  const cats={couplers:[],elbows:[],tees:[],valves:[],adapters:[],finish:[]};
+  for(const f of fitChains)cats[catOf(f.def)].push(f);
+  const sysOrder=Object.keys(SYS).sort((a,b)=>((a===ctxSys?0:1)-(b===ctxSys?0:1)));
+  const sizeIdx=d=>{const i=(SYS[d.sys].sizes||[]).indexOf(d.ports[0].sz);return i<0?99:i;};
+  function fillByMaterial(container,list,makeCard){
     const bySys={};
-    for(const f of far)(bySys[f.def.sys]=bySys[f.def.sys]||[]).push(f);
-    for(const sys in bySys){
-      const list=bySys[sys].sort(byRank);
-      const det=document.createElement("details");det.className="syssec";
-      det.innerHTML=`<summary><span class="swatch" style="background:${SYS[sys].fit}"></span>${SYS[sys].label} <span style="font-weight:400;color:var(--mut);font-size:11.5px">· ${list.length} fittings</span></summary>`;
-      let filled=false;
-      det.addEventListener("toggle",()=>{
-        if(det.open&&!filled){filled=true;for(const f of list)det.appendChild(makeFitCard(f));}
+    for(const it of list){const sys=it.def?it.def.sys:it.sys;(bySys[sys]=bySys[sys]||[]).push(it);}
+    for(const sys of sysOrder){
+      if(!bySys[sys])continue;
+      const items=bySys[sys].sort((a,b)=>{
+        const r=a.steps.length-b.steps.length;if(r)return r;
+        const sa=a.def?sizeIdx(a.def):SYS[sys].sizes.indexOf(a.sz);
+        const sb=b.def?sizeIdx(b.def):SYS[sys].sizes.indexOf(b.sz);
+        return (sa-sb)||(fitPrices(a.steps)-fitPrices(b.steps));
       });
-      el.appendChild(det);
+      container.insertAdjacentHTML("beforeend",`<div class="grouph"><span class="swatch" style="background:${SYS[sys].fit}"></span>${SYS[sys].label}</div>`);
+      for(const it of items)container.appendChild(makeCard(it));
     }
   }
-  renderGroup("Finish the line (taps, caps)",ends);
+  function catSection(id,title,list,makeCard){
+    if(!list.length)return;
+    const direct=list.filter(x=>!x.steps.length).length;
+    const det=document.createElement("details");det.className="syssec";
+    det.innerHTML=`<summary>${title} <span style="font-weight:400;color:var(--mut);font-size:11.5px">· ${list.length} options${direct?`, ${direct} fit directly`:""}</span></summary>`;
+    let filled=false;
+    const doFill=()=>{if(!filled){filled=true;fillByMaterial(det,list,makeCard);}};
+    if(openCats.has(id)){det.open=true;doFill();}
+    det.addEventListener("toggle",()=>{
+      if(det.open){openCats.add(id);doFill();}
+      else openCats.delete(id);
+    });
+    el.appendChild(det);
+  }
+  catSection("pipes","Pipes & tubes",pipeOptions,makePipeCard);
+  catSection("couplers","Couplers & unions — join straight",cats.couplers,makeFitCard);
+  catSection("elbows","Elbows — turn the line",cats.elbows,makeFitCard);
+  catSection("tees","Tees — branch the line",cats.tees,makeFitCard);
+  catSection("valves","Valves — shut-off points",cats.valves,makeFitCard);
+  catSection("adapters","Adapters & reducers — change size or material",cats.adapters,makeFitCard);
+  catSection("finish","Taps, caps & plugs — finish the line",cats.finish,makeFitCard);
+  if(!pipeOptions.length&&!fitChains.length)
+    el.insertAdjacentHTML("beforeend",`<p class="empty">Nothing in the catalog can reach this connection.</p>`);
   updateBOM();
 }
 
