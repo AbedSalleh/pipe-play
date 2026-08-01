@@ -1740,11 +1740,22 @@ async function sbAuth(path,body){
   if(!res.ok)throw new Error(j.msg||j.error_description||j.message||("HTTP "+res.status));
   return j;
 }
+function sessionDied(){
+  setSess(null);SB.cache=null;updateUserChip();
+  showLogin();authMsg("Your session expired — sign in again to keep saving to your account. The design on the canvas is untouched.");
+}
 async function sbRest(path,opts){
   const cfg=sbCfg();opts=opts||{};
-  const res=await fetch(cfg.url+"/rest/v1/"+path,{method:opts.method||"GET",
+  if(!(await ensureFreshSession())){sessionDied();throw new Error("session expired — sign in again");}
+  const doFetch=()=>fetch(cfg.url+"/rest/v1/"+path,{method:opts.method||"GET",
     headers:Object.assign({apikey:cfg.key,Authorization:"Bearer "+SB.sess.access_token,"Content-Type":"application/json"},opts.headers||{}),
     body:opts.body!==undefined?JSON.stringify(opts.body):undefined});
+  let res=await doFetch();
+  if(res.status===401){ // server disagrees with our clock: force one refresh and retry
+    SB.sess.expires_at=0;
+    if(!(await ensureFreshSession())){sessionDied();throw new Error("session expired — sign in again");}
+    res=await doFetch();
+  }
   if(!res.ok){const t=await res.text().catch(()=>"");throw new Error(t.slice(0,180)||("HTTP "+res.status));}
   return res.status===204?null:res.json();
 }
