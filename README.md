@@ -78,12 +78,23 @@ It talks to a Supabase project **you own** (free tier is plenty — designs are
    **publishable / anon public key**. (This key is designed to be public —
    the data is protected by the row-level-security policy above, which lets
    each signed-in user touch only their own rows.)
-5. Open the app (the GitHub Pages copy — see below), and paste both values
-   into the connect screen. Then **Create account** with an email + password.
+5. **Recommended — one project for all your users:** open `index.html`, find
+   `SB_BUILTIN` near the top of the script, and paste your Project URL and
+   publishable key there, then commit and push. Every visitor to your page
+   then just sees email + password — they create accounts on *your* project
+   with no setup of their own. (The publishable key is designed to be shipped
+   in client code; per-user data stays private through the RLS policy above.)
+   Alternatively, leave `SB_BUILTIN` empty and each browser gets a one-time
+   connect screen to paste the values manually.
 
 Designs saved in the browser before signing in are offered for upload into
 the account on first sign-in. "Continue offline" keeps everything
 browser-local, exactly as before.
+
+Notes for the owner: accounts and designs all live in your project, so you
+are the admin — you can see stored designs and user emails in the dashboard
+(passwords are hashed by Supabase; nobody can read those). The free tier
+covers 50,000 monthly active users, far beyond a hobby app's needs.
 
 Note: the claude.ai artifact preview blocks all outside servers, so sign-in
 only works on the GitHub Pages copy (or the file opened directly).

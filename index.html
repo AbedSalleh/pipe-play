@@ -215,6 +215,19 @@
 
 <script>
 "use strict";
+/* ========================================================================
+   OWNER SETUP — one Supabase project for ALL your users.
+   Paste your project's URL and its PUBLISHABLE (anon public) key below and
+   every visitor gets email+password accounts on YOUR project — no setup
+   screen for them. This key is designed to be shipped in client code
+   (like a Stripe publishable key); each user's data is protected by the
+   row-level-security policy from the README, not by hiding the key.
+   Leave both empty to fall back to the per-browser connect screen.
+   ======================================================================== */
+const SB_BUILTIN={
+  url:"",   // e.g. "https://abcdefgh.supabase.co"
+  key:""    // the "publishable" / "anon public" key from Settings → API
+};
 /* ================= catalog ================= */
 const SZL = {"12":"½″","34":"¾″","1":"1″"};
 
@@ -1681,7 +1694,10 @@ $("clear").addEventListener("click",async()=>{
    Row Level Security on the designs table (see README). */
 const SBCFGKEY="pipeplay-supabase", SBSESSKEY="pipeplay-session", MODEKEY="pipeplay-authmode";
 const SB={sess:null,cache:null};
-function sbCfg(){try{const c=JSON.parse(localStorage.getItem(SBCFGKEY));return (c&&c.url&&c.key)?c:null;}catch(e){return null;}}
+function sbCfg(){
+  if(SB_BUILTIN.url&&SB_BUILTIN.key)return SB_BUILTIN;
+  try{const c=JSON.parse(localStorage.getItem(SBCFGKEY));return (c&&c.url&&c.key)?c:null;}catch(e){return null;}
+}
 try{SB.sess=JSON.parse(localStorage.getItem(SBSESSKEY));}catch(e){}
 function setSess(s){if(s)localStorage.setItem(SBSESSKEY,JSON.stringify(s));else localStorage.removeItem(SBSESSKEY);SB.sess=s;}
 async function sbAuth(path,body){
@@ -1738,9 +1754,10 @@ function updateUserChip(){
   $("switchuser").textContent=SB.sess?"Sign out":"Sign in";
 }
 function showLogin(){
-  const cfg=sbCfg();
+  const cfg=sbCfg(), builtin=!!(SB_BUILTIN.url&&SB_BUILTIN.key);
   $("sbsetup").hidden=!!cfg;
   $("sbauth").hidden=!cfg;
+  $("sbchange").parentElement.hidden=builtin; // owner-managed connection: nothing for users to change
   $("authmsg").textContent="";
   $("login").hidden=false;
 }
