@@ -115,6 +115,19 @@
   .slotrow .info{flex:1;min-width:0}
   .slotrow .snm{font-weight:600;font-size:13px}
   .slotrow .smeta{font-size:11px;color:var(--mut)}
+  .loginback{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;align-items:center;justify-content:center}
+  .loginback[hidden]{display:none}
+  .loginbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;max-width:380px;width:calc(100% - 40px);box-shadow:0 10px 40px rgba(0,0,0,.15)}
+  .loginbox h2{margin:2px 0 4px;font-size:20px}
+  .loginbox .store{margin-bottom:14px}
+  .profrow{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:pointer;background:var(--panel)}
+  .profrow:hover{border-color:var(--accent)}
+  .profrow .pmeta{flex:1;min-width:0}
+  .profrow .pname{font-weight:600;font-size:13.5px}
+  .profrow .psub{font-size:11px;color:var(--mut)}
+  .avatar{width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700}
+  input#newname{flex:1;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--panel);color:var(--ink);min-width:0}
+  #userchip{font-size:12px;color:var(--mut);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .modalback{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:50}
   .modal{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;max-width:360px;width:calc(100% - 40px);box-shadow:0 10px 40px rgba(0,0,0,.3)}
   .modal p{margin:0 0 12px}
@@ -136,6 +149,8 @@
 <header>
   <h1>Pipe Play <span>· Malaysian pipe combination builder — 3D</span></h1>
   <div class="spacer"></div>
+  <span id="userchip"></span>
+  <button class="btn" id="switchuser">Switch user</button>
   <select id="examples" aria-label="Load an example">
     <option value="">Examples…</option>
     <option value="garden">Extend a garden tap (PVC standpipe)</option>
@@ -176,6 +191,20 @@
     <div class="body" id="bom"></div>
   </section>
 </main>
+</div>
+
+<div class="loginback" id="login" hidden>
+  <div class="loginbox">
+    <div style="font-size:26px">🔧</div>
+    <h2>Pipe Play</h2>
+    <p class="store">Who's planning today? Profiles keep each person's save files separate <b>on this device</b> — they are not password-protected online accounts.</p>
+    <div id="proflist"></div>
+    <div class="row" style="display:flex;gap:8px;margin:10px 0 8px">
+      <input id="newname" maxlength="20" placeholder="New profile name" aria-label="New profile name">
+      <button class="btn primary" id="mkprofile">Create</button>
+    </div>
+    <button class="btn" id="guest" style="width:100%">Continue as guest</button>
+  </div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -1640,8 +1669,71 @@ $("clear").addEventListener("click",async()=>{
   if((root||floats.length)&&!(await confirmUI("Clear the whole assembly? (Undo can bring it back)")))return;
   pushUndo();root=null;floats=[];selPort=null;selNode=null;snapTarget=null;refresh();fitView();
 });
-/* ---- save files (three slots, like emulator save states) ---- */
-const NSLOTS=3, slotKey=i=>"pipeplay-slot-"+i;
+/* ---- profiles: device-local "login" that namespaces the save files ---- */
+const PROFKEY="pipeplay-profiles", CURKEY="pipeplay-current";
+let currentUser=localStorage.getItem(CURKEY)||null; // "__guest" or a profile name; null = not chosen yet
+function profileList(){try{return JSON.parse(localStorage.getItem(PROFKEY))||[];}catch(e){return[];}}
+function saveProfileList(l){localStorage.setItem(PROFKEY,JSON.stringify(l));}
+function nsPrefix(){return (currentUser&&currentUser!=="__guest")?("pipeplay:"+currentUser+":"):"pipeplay-";}
+function avatarColor(name){let h=0;for(const ch of name)h=(h*31+ch.charCodeAt(0))%360;return `hsl(${h},45%,45%)`;}
+function updateUserChip(){
+  $("userchip").textContent=currentUser&&currentUser!=="__guest"?("👤 "+currentUser):"👤 Guest";
+}
+function loginAs(name){
+  currentUser=name;localStorage.setItem(CURKEY,name);
+  $("login").hidden=true;updateUserChip();
+  toast(name==="__guest"?"Continuing as guest":"Signed in as "+name);
+}
+function legacySlotsInUse(){
+  for(let i=1;i<=3;i++)if(localStorage.getItem("pipeplay-slot-"+i))return true;
+  return false;
+}
+function renderLogin(){
+  const el=$("proflist");el.innerHTML="";
+  for(const p of profileList()){
+    const row=document.createElement("div");row.className="profrow";row.tabIndex=0;row.setAttribute("role","button");
+    const slots=[1,2,3].filter(i=>localStorage.getItem("pipeplay:"+p.name+":slot-"+i)).length;
+    row.innerHTML=`<span class="avatar" style="background:${avatarColor(p.name)}">${p.name.slice(0,2).toUpperCase()}</span>
+      <div class="pmeta"><div class="pname">${p.name}</div><div class="psub">${slots} of 3 save files used</div></div>`;
+    const del=document.createElement("button");del.className="mini";del.textContent="✕";del.title="Delete profile";
+    del.addEventListener("click",async ev=>{
+      ev.stopPropagation();
+      if(!(await confirmUI(`Delete profile "${p.name}" and its save files? This cannot be undone.`)))return;
+      saveProfileList(profileList().filter(x=>x.name!==p.name));
+      for(let i=1;i<=3;i++)localStorage.removeItem("pipeplay:"+p.name+":slot-"+i);
+      renderLogin();
+    });
+    row.appendChild(del);
+    row.addEventListener("click",()=>loginAs(p.name));
+    row.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();loginAs(p.name);}});
+    el.appendChild(row);
+  }
+}
+function showLogin(){renderLogin();$("login").hidden=false;}
+$("guest").addEventListener("click",()=>loginAs("__guest"));
+$("mkprofile").addEventListener("click",async()=>{
+  const name=($("newname").value||"").trim();
+  if(!/^[\w\- ]{1,20}$/.test(name)||name==="__guest"){toast("Give the profile a simple name (letters, numbers, spaces)");return;}
+  if(profileList().some(p=>p.name.toLowerCase()===name.toLowerCase())){toast("That profile already exists — click it to sign in");return;}
+  saveProfileList(profileList().concat([{name,created:Date.now()}]));
+  // bring the designs already saved in this browser (guest slots) into the new profile
+  if(legacySlotsInUse()&&(await confirmUI(`This browser already has saved designs (guest files). Copy them into "${name}"?`))){
+    for(let i=1;i<=3;i++){
+      const v=localStorage.getItem("pipeplay-slot-"+i);
+      if(v)localStorage.setItem("pipeplay:"+name+":slot-"+i,v);
+    }
+    toast("Copied your saved designs into "+name);
+  }
+  $("newname").value="";
+  loginAs(name);
+});
+$("newname").addEventListener("keydown",e=>{if(e.key==="Enter")$("mkprofile").click();});
+$("switchuser").addEventListener("click",()=>{
+  localStorage.removeItem(CURKEY);currentUser=null;showLogin();
+});
+
+/* ---- save files (three slots per profile, like emulator save states) ---- */
+const NSLOTS=3, slotKey=i=>nsPrefix()+"slot-"+i;
 (function migrateOldSave(){ // pre-slot versions stored one design under pipeplay-save
   try{
     const old=localStorage.getItem("pipeplay-save");
@@ -1695,6 +1787,41 @@ function renderSlots(){
     row.appendChild(bDel);
     pop.appendChild(row);
   }
+  // move designs between devices/profiles without any account
+  const xrow=document.createElement("div");xrow.className="slotrow";
+  xrow.innerHTML=`<div class="info"><div class="snm">Move between devices</div><div class="smeta">Design text works anywhere — no account needed</div></div>`;
+  const bx=document.createElement("button");bx.className="mini";bx.textContent="Export";
+  bx.addEventListener("click",()=>{
+    if(!root&&!floats.length){toast("Nothing to export yet");return;}
+    const payload={app:"pipe-play",ver:1,ts:Date.now(),t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir}))};
+    showTextModal("Copy this design text — on another device or profile, use Files → Import:",JSON.stringify(payload));
+  });
+  xrow.appendChild(bx);
+  const bi=document.createElement("button");bi.className="mini";bi.textContent="Import";
+  bi.addEventListener("click",importModal);
+  xrow.appendChild(bi);
+  pop.appendChild(xrow);
+}
+function importModal(){
+  const back=document.createElement("div");back.className="modalback";
+  back.innerHTML=`<div class="modal"><p>Paste a design text (made with Files → Export):</p><textarea></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Load design</button></div></div>`;
+  back.addEventListener("click",e=>{
+    e.stopPropagation();
+    if(e.target===back){back.remove();return;}
+    const b=e.target.closest("button");if(!b)return;
+    if(b.dataset.x==="1"){
+      try{
+        const o=JSON.parse(back.querySelector("textarea").value);
+        if(o.app!=="pipe-play")throw new Error("not ours");
+        pushUndo();root=build(o.t);
+        floats=(o.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
+        selPort=null;selNode=null;snapTarget=null;refresh();fitView();closeFiles();toast("Design loaded");
+      }catch(err){toast("That doesn't look like a Pipe Play design text");return;}
+    }
+    back.remove();
+  });
+  document.body.appendChild(back);back.querySelector("textarea").focus();
 }
 function closeFiles(){$("filespop").hidden=true;$("files").setAttribute("aria-expanded","false");}
 $("files").addEventListener("click",e=>{
@@ -1764,6 +1891,8 @@ window.PP={
 if(!ENG){
   $("hint").textContent="WebGL is not available in this browser — the 3D canvas cannot start.";
 }
+updateUserChip();
+if(!currentUser)showLogin();
 refresh();fitView();
 requestAnimationFrame(frame);
 </script>
