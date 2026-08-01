@@ -46,3 +46,16 @@ Open `index.html` in any browser. No build step, no dependencies, works offline.
 
 Prices are rough Peninsular Malaysia estimates and vary by store — treat the
 total as a budgeting guide, not a quote.
+
+## Live page (GitHub Pages)
+
+A workflow (`.github/workflows/pages.yml`) deploys the app to GitHub Pages on
+every push. GitHub requires the site to be enabled once by the repo owner:
+
+1. Open **Settings → Pages** on the repository.
+2. Under **Build and deployment → Source**, choose **GitHub Actions**.
+3. Re-run the "Deploy to GitHub Pages" workflow from the Actions tab (or push
+   any commit).
+
+After that, the app is served at **https://abedsalleh.github.io/pipe-play/**
+and updates automatically on every push.
