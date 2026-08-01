@@ -1814,15 +1814,45 @@ async function eraseCloudSlot(i){
   await sbRest("designs?slot=eq."+i,{method:"DELETE"});
   if(SB.cache)delete SB.cache[i];
 }
+const IN_ARTIFACT=/claude\.(ai|site)$/.test(location.hostname); // the claude.ai preview sandbox blocks outside servers
+function isNetErr(e){return e instanceof TypeError||/fetch|network|Failed to fetch/i.test((e&&e.message)||"");}
 function friendlyAuthError(e){
   const m=(e&&e.message)||"";
-  if(e instanceof TypeError||/fetch|network|Failed/i.test(m))
-    return "Can't reach Supabase from this page. The claude.ai preview blocks outside servers — open your GitHub Pages copy, or continue offline.";
+  if(isNetErr(e))
+    return IN_ARTIFACT
+      ?"Can't reach Supabase from this preview page (it blocks outside servers) — open your GitHub Pages copy, or continue offline."
+      :"Can't reach Supabase right now — check your internet connection (or an ad-blocker blocking supabase.co) and try again.";
   if(/invalid login credentials/i.test(m))return "Wrong email or password.";
   if(/already registered/i.test(m))return "That email already has an account — use Sign in.";
   if(/at least|password/i.test(m))return m;
   return m||"Something went wrong — try again.";
 }
+/* saves that fail to reach the account are queued and retried automatically */
+const PENDKEY="pipeplay-pending";
+function pendingSaves(){try{return JSON.parse(localStorage.getItem(PENDKEY))||{};}catch(e){return{};}}
+function queuePendingSave(slot,payload){
+  const q=pendingSaves();q[slot]=payload;
+  try{localStorage.setItem(PENDKEY,JSON.stringify(q));}catch(e){}
+}
+let flushing=false;
+async function flushPendingSaves(){
+  if(flushing||!SB.sess)return;
+  const q=pendingSaves(), slots=Object.keys(q);
+  if(!slots.length)return;
+  flushing=true;
+  try{
+    for(const k of slots){
+      await saveCloudSlot(+k,q[k]); // throws on failure -> stop, keep the rest queued
+      delete q[k];
+      localStorage.setItem(PENDKEY,JSON.stringify(q));
+      toast(`File ${k} uploaded to your account`);
+    }
+    if(!$("filespop").hidden)renderSlots();
+  }catch(e){}
+  flushing=false;
+}
+setInterval(flushPendingSaves,45000);
+window.addEventListener("online",flushPendingSaves);
 function updateUserChip(){
   $("userchip").textContent=SB.sess?("\ud83d\udc64 "+SB.sess.email):"\ud83d\udc64 Guest (this browser only)";
   $("switchuser").textContent=SB.sess?"Sign out":"Sign in";
@@ -1852,6 +1882,7 @@ async function finishLogin(){
       toast("Designs uploaded to your account");
     }
   }catch(e){SB.cache=SB.cache||{};toast("Signed in, but couldn't load save files: "+friendlyAuthError(e));}
+  flushPendingSaves(); // anything queued while offline or signed out goes up now
 }
 $("sbsave").addEventListener("click",()=>{
   const url=($("sburl").value||"").trim().replace(/\/+$/,"");
@@ -1909,7 +1940,7 @@ const NSLOTS=3, slotKey=i=>"pipeplay-slot-"+i;
   }catch(e){}
 })();
 function readSlot(i){
-  if(SB.sess)return (SB.cache&&SB.cache[i])||null;
+  if(SB.sess)return (SB.cache&&SB.cache[i])||pendingSaves()[i]||null;
   try{const s=localStorage.getItem(slotKey(i));return s?JSON.parse(s):null;}catch(e){return null;}
 }
 function countParts(){
@@ -1933,7 +1964,11 @@ function renderSlots(){
       const payload={t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),ts:Date.now(),parts:countParts(),total:window._bomTotal??null};
       if(SB.sess){
         try{await saveCloudSlot(i,payload);toast(`Saved to File ${i} in your account`);}
-        catch(e){toast("Couldn't save to your account: "+friendlyAuthError(e));return;}
+        catch(e){
+          queuePendingSave(i,payload);
+          toast(`Couldn't reach your account — File ${i} is kept on this device and will upload automatically. (${friendlyAuthError(e)})`);
+          renderSlots();return;
+        }
       } else {
         localStorage.setItem(slotKey(i),JSON.stringify(payload));
         toast(`Saved to File ${i} (this browser)`);
@@ -2113,6 +2148,7 @@ try{ // the working canvas survives page reloads
     if(await ensureFreshSession()){
       updateUserChip();
       try{await loadCloudSlots();}catch(e){SB.cache={};}
+      flushPendingSaves();
     } else showLogin();
   } else if(localStorage.getItem(MODEKEY)!=="guest") showLogin();
 })();
