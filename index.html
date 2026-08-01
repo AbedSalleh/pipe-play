@@ -130,12 +130,27 @@
   .toast.show{opacity:1}
   .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:5px;border:1px solid rgba(0,0,0,.2)}
 
+  .mtabs{display:none}
   @media (max-width: 980px){
-    .app{height:auto;min-height:100vh}
-    main{grid-template-columns:1fr}
-    .pane{border-right:none;border-top:1px solid var(--line);max-height:45vh}
-    .pane:last-child{border-left:none}
-    .canvas-wrap{height:52vh;order:-1}
+    body{font-size:13.5px}
+    .app{height:100vh;height:100dvh}
+    header{padding:6px 8px;gap:6px}
+    header h1{font-size:14px}
+    header h1 span{display:none}
+    #userchip{display:none}
+    header .btn,header select{padding:4px 8px;font-size:12px}
+    main{display:flex;flex-direction:column;min-height:0}
+    .canvas-wrap{order:0;flex:none;height:44vh;height:44dvh}
+    .mtabs{display:flex;order:1;border-top:1px solid var(--line);background:var(--panel)}
+    .mtabs button{flex:1;padding:9px 4px;border:none;background:none;color:var(--mut);font:inherit;font-weight:600;font-size:13px;border-bottom:2px solid transparent;cursor:pointer}
+    .mtabs button.on{color:var(--ink);border-bottom-color:var(--accent)}
+    .pane{order:2;flex:1;min-height:0;max-height:none;border:none;display:none}
+    body[data-mtab="parts"] #leftpane{display:flex}
+    body[data-mtab="list"] .pane:last-child{display:flex}
+    .hint{font-size:10.5px;max-width:58%;padding:3px 7px}
+    .zoombar{gap:4px}
+    .zoombar .btn{padding:4px 9px}
+    .card .thumb{width:48px;height:48px}
   }
 </style>
 
@@ -175,6 +190,11 @@
       <button class="btn" id="zfit" aria-label="Fit view">Fit</button>
     </div>
   </section>
+
+  <div class="mtabs" id="mtabs" role="tablist">
+    <button data-tab="parts" class="on" role="tab">🧩 Parts</button>
+    <button data-tab="list" role="tab">🛒 List · RM <span id="mtot">0</span></button>
+  </div>
 
   <section class="pane">
     <div class="head" style="display:flex;align-items:center">
@@ -1235,6 +1255,7 @@ function endDrag(e){
       else if(hit.type==="entry"){selNode=hit.fl.node;selPort=null;}
       else{selNode=hit.node;selPort=null;}
       renderPanels();
+      if(hit&&IS_MOBILE())setMTab("parts"); // tapping something in 3D brings up its options
     }
   }
 }
@@ -1652,7 +1673,7 @@ function collect(){
 }
 function updateBOM(){
   const el=$("bom");el.innerHTML="";
-  if(!root){el.innerHTML=`<p class="empty">Your shopping list builds itself as you snap parts together.</p>`;window._bomText="";window._bomTotal=null;return;}
+  if(!root){el.innerHTML=`<p class="empty">Your shopping list builds itself as you snap parts together.</p>`;window._bomText="";window._bomTotal=null;$("mtot").textContent="0";return;}
   const {pipes,fits,joints}=collect();
   let total=0,rows="";
   const pk=Object.keys(pipes);
@@ -1690,6 +1711,7 @@ function updateBOM(){
   el.insertAdjacentHTML("beforeend",`<div class="disclaimer">Prices are rough hardware-store estimates (Peninsular Malaysia, 2026) — actual kedai prices vary. Sizes: ½″≈15 mm, ¾″≈20 mm, 1″≈25 mm nominal.</div>`);
   window._bomText=bomText(pipes,fits,joints,total);
   window._bomTotal=total;
+  $("mtot").textContent=Math.round(total);
 }
 function bomText(pipes,fits,joints,total){
   let t="PIPE PLAY — SHOPPING LIST\n==========================\n\nPIPES\n";
@@ -1705,6 +1727,18 @@ function bomText(pipes,fits,joints,total){
   t+=`\nESTIMATED TOTAL: RM ${total.toFixed(2)} (prices vary by store)\n`;
   return t;
 }
+
+/* ================= mobile tabs (hidden on desktop via CSS) ================= */
+const IS_MOBILE=()=>window.matchMedia("(max-width: 980px)").matches;
+function setMTab(t){
+  document.body.dataset.mtab=t;
+  for(const b of $("mtabs").querySelectorAll("button"))b.classList.toggle("on",b.dataset.tab===t);
+}
+document.body.dataset.mtab="parts";
+$("mtabs").addEventListener("click",e=>{
+  const b=e.target.closest("button");
+  if(b)setMTab(b.dataset.tab);
+});
 
 /* ================= toolbar ================= */
 function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1800);}
