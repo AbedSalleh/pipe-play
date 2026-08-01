@@ -187,6 +187,7 @@
     <div id="labels"></div>
     <div class="hint" id="hint">Drag to orbit · scroll to zoom · Shift-drag to pan · click an <b>orange ball</b> to attach parts — arrows show which way the line grows</div>
     <div class="zoombar">
+      <button class="btn" id="zlabels" aria-label="Show or hide length labels" aria-pressed="true" title="Show/hide length labels">🏷</button>
       <button class="btn" id="zin" aria-label="Zoom in">+</button>
       <button class="btn" id="zout" aria-label="Zoom out">−</button>
       <button class="btn" id="zfit" aria-label="Fit view">Fit</button>
@@ -976,6 +977,7 @@ const ENG=makeEngine(canvas,{});
 const labelsEl=$("labels");
 let cam={yaw:-0.65,pitch:0.42,dist:5,target:[1.2,0,0.2]};
 let lastVP=M4I,lastEye=[0,0,5];
+let showLabels=localStorage.getItem("pipeplay-labels")!=="0";
 let pickTable=[null], lastPorts=[], sceneLabels=[], bbox=null;
 let themeColors={bg:[0.93,0.92,0.90],grid:[0.85,0.84,0.81],accent:[0.91,0.38,0.11],ink:[0.13,0.15,0.17]};
 function refreshTheme(){
@@ -1175,6 +1177,7 @@ function frame(){
     const W=canvas.clientWidth,H=canvas.clientHeight;
     for(const l of sceneLabels){
       if(!l.el)continue;
+      if(!showLabels){l.el.style.display="none";continue;}
       const mid=V.scl(V.add(l.a,l.b),0.5);
       const pr=project(mid);
       if(pr[2]<0.05){l.el.style.display="none";continue;}
@@ -1354,6 +1357,14 @@ canvas.addEventListener("dblclick",e=>{ // double-click a part to orbit around i
   if(hit&&hit.type==="node"&&hit.node._p0){cam.target=hit.node._p0.slice();toast("Orbiting around this part");}
   else if(hit&&hit.type==="port"){cam.target=hit.port.pos.slice();}
 });
+$("zlabels").addEventListener("click",()=>{
+  showLabels=!showLabels;
+  localStorage.setItem("pipeplay-labels",showLabels?"1":"0");
+  $("zlabels").setAttribute("aria-pressed",showLabels?"true":"false");
+  $("zlabels").style.opacity=showLabels?"":"0.45";
+  toast(showLabels?"Length labels on":"Length labels off");
+});
+if(!showLabels){$("zlabels").setAttribute("aria-pressed","false");$("zlabels").style.opacity="0.45";}
 $("zin").addEventListener("click",()=>cam.dist=Math.max(.4,cam.dist/1.45));
 $("zout").addEventListener("click",()=>cam.dist=Math.min(160,cam.dist*1.45));
 $("zfit").addEventListener("click",fitView);
