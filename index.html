@@ -579,6 +579,31 @@ function box(arr,c,s,col,pick){
   }
 }
 const GOLD=hex2rgb("#B08A3E");
+const mulRGB=(c,f)=>[c[0]*f,c[1]*f,c[2]*f];
+const DARKHOLE=[0.07,0.08,0.09];
+/* Port-end anatomy so male/female is readable: male threads are a ridged
+   spigot sticking out (it slides INTO the mating part when assembled);
+   female/socket/compression ends are a collar with a visible dark opening. */
+function endDetail(arr,p,out,spec,col,pick){
+  if(!spec)return;
+  const r=radOf(spec.sz)*1.35;
+  if(spec.t==="thm"){
+    const sp=V.add(p,V.scl(out,0.048));
+    cylinder(arr,p,sp,r*0.60,12,mulRGB(col,0.85),pick,true);
+    for(let i=0;i<4;i++){
+      const q=V.add(p,V.scl(out,0.006+i*0.010));
+      cylinder(arr,q,V.add(q,V.scl(out,0.0045)),r*0.70,12,mulRGB(col,0.55),pick,true);
+    }
+  } else if(spec.t==="thf"||spec.t==="sock"||spec.t==="fus"){
+    cylinder(arr,V.sub(p,V.scl(out,0.006)),V.add(p,V.scl(out,0.020)),r*1.18,16,col,pick,true);
+    if(spec.t==="thf") // thread hint just inside the rim
+      cylinder(arr,V.add(p,V.scl(out,0.015)),V.add(p,V.scl(out,0.020)),r*0.82,14,mulRGB(col,0.5),pick,true);
+    cylinder(arr,V.add(p,V.scl(out,0.020)),V.add(p,V.scl(out,0.0245)),r*0.60,14,DARKHOLE,pick,true);
+  } else if(spec.t==="comp"||spec.t==="bcomp"){
+    cylinder(arr,V.sub(p,V.scl(out,0.006)),V.add(p,V.scl(out,0.030)),r*1.25,6,col,pick,true);
+    cylinder(arr,V.add(p,V.scl(out,0.030)),V.add(p,V.scl(out,0.0345)),r*0.55,12,DARKHOLE,pick,true);
+  }
+}
 function meshForShape(arr,s,pick){
   const dirv=d=>DIRV[d];
   if(s.t==="pipe"){
@@ -588,13 +613,25 @@ function meshForShape(arr,s,pick){
       const off=V.scl([0,0,1],r*0.92);
       cylinder(arr,V.add(s.a,off),V.add(s.b,off),r*0.16,8,hex2rgb("#2E7BD6"),pick,true);
     }
+    if(s.n.data.sys==="gi"){ // GI pipe comes threaded: ridges cut into both ends
+      const ax=V.norm(V.sub(s.b,s.a));
+      for(const [p,o] of [[s.a,ax],[s.b,V.scl(ax,-1)]])
+        for(let i=0;i<4;i++){
+          const q=V.add(p,V.scl(o,0.006+i*0.010));
+          cylinder(arr,q,V.add(q,V.scl(o,0.0045)),r*1.10,12,mulRGB(col,0.72),pick,true);
+        }
+    }
   } else if(s.t==="inline"||s.t==="endfit"){
     const d=s.def, sys=SYS[d.sys], r=radOf(d.ports[0].sz)*1.35, col=hex2rgb(sys.fit);
-    const seg=(d.sys==="hdpe"||d.sys==="palpe")?6:16; // hex nuts for compression
     cylinder(arr,s.a,s.b,r,16,col,pick,true);
     const ax=V.norm(V.sub(s.b,s.a));
-    cylinder(arr,s.a,V.add(s.a,V.scl(ax,.025)),r*1.22,seg,col,pick,true);
-    if(s.t==="inline") cylinder(arr,V.sub(s.b,V.scl(ax,.025)),s.b,r*1.22,seg,col,pick,true);
+    const viaIdx=(s.n&&s.n.via!=null)?s.n.via:0;
+    const specA=d.ports[viaIdx]||d.ports[0];
+    endDetail(arr,s.a,V.scl(ax,-1),specA,col,pick);
+    if(s.t==="inline"){
+      const other=d.ports.find((p,i)=>i!==viaIdx)||d.ports[1];
+      endDetail(arr,s.b,ax,other,col,pick);
+    }
     else sphere(arr,s.b,r*0.95,col,pick);
     const mid=V.scl(V.add(s.a,s.b),0.5);
     if(d.id.startsWith("tap")){
@@ -619,11 +656,16 @@ function meshForShape(arr,s,pick){
     cylinder(arr,s.a,s.c,r,14,col,pick,true);
     cylinder(arr,s.c,s.b,r,14,col,pick,true);
     sphere(arr,s.c,r*1.02,col,pick);
+    endDetail(arr,s.a,V.norm(V.sub(s.a,s.c)),d.ports[0],col,pick);
+    endDetail(arr,s.b,V.norm(V.sub(s.b,s.c)),d.ports[1],col,pick);
   } else if(s.t==="tee"){
     const d=s.def, sys=SYS[d.sys], r=radOf(d.ports[0].sz)*1.35, col=hex2rgb(sys.fit);
     cylinder(arr,s.a,s.b,r,14,col,pick,true);
     cylinder(arr,s.m,s.bp,r,14,col,pick,true);
     sphere(arr,s.m,r*1.02,col,pick);
+    endDetail(arr,s.a,V.norm(V.sub(s.a,s.m)),d.ports[0],col,pick);
+    endDetail(arr,s.b,V.norm(V.sub(s.b,s.m)),d.ports[1],col,pick);
+    endDetail(arr,s.bp,V.norm(V.sub(s.bp,s.m)),d.ports[2],col,pick);
   } else if(s.t==="start"){
     const grey=hex2rgb("#8A939B");
     if(s.n.data==="tank"){
@@ -973,7 +1015,7 @@ function thumbSrc(key,buildFn){
   if(thumbCache[key])return thumbCache[key];
   if(!thumbEng){
     thumbCanvas=document.createElement("canvas");
-    thumbCanvas.width=thumbCanvas.height=132;
+    thumbCanvas.width=thumbCanvas.height=264;
     thumbEng=makeEngine(thumbCanvas,{preserve:true,alpha:true});
     if(!thumbEng)return "";
   }
@@ -984,8 +1026,8 @@ function thumbSrc(key,buildFn){
   const r=Math.max(.05,V.len(V.sub(mx,mn))/2);
   const gl=thumbEng.gl;
   thumbEng.setStatic(new Float32Array(arr));
-  gl.viewport(0,0,132,132);
-  const eye=V.add(c,V.scl(V.norm([1,-0.85,0.7]),r*2.6));
+  gl.viewport(0,0,264,264);
+  const eye=V.add(c,V.scl(V.norm([1,-0.85,0.7]),r*2.25));
   const vp=m4mul(m4persp(0.7,1,0.02,50),m4look(eye,c,[0,0,1]));
   gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.useProgram(thumbEng.prog);
