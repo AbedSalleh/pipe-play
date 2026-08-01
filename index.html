@@ -1185,7 +1185,7 @@ canvas.addEventListener("pointermove",e=>{
     if(!drag.moved)return;
     // horizontal mouse = move along screen-right; vertical mouse = move up/down in the world
     const s=cam.dist*0.0016;
-    const right=[Math.cos(cam.yaw-Math.PI/2),Math.sin(cam.yaw-Math.PI/2),0];
+    const right=[-Math.sin(cam.yaw),Math.cos(cam.yaw),0]; // true screen-right (cross of view dir and up)
     drag.fl.pos=[drag.startPos[0]+right[0]*dxT*s,
                  drag.startPos[1]+right[1]*dxT*s,
                  drag.startPos[2]-dyT*s];
