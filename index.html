@@ -267,6 +267,8 @@ for(const s of T3){const L=SZL[s];
   def("pvc-fs-"+s,"pvc","PVC faucet socket "+L+" (brass thread)","Faucet socket PVC "+L+" (FS, benang tembaga)",{ "12":4.5,"34":6.5,"1":9.5}[s],[sock(s),thf(s)],"inline","Glues to PVC, gives a brass female thread — screw a tap or male fitting into it.");
   def("pvc-valve-"+s,"pvc","PVC ball valve "+L,"Ball valve PVC "+L,{ "12":7,"34":9,"1":14}[s],[sock(s),sock(s)],"inline","Shut-off point. Glue both sides.");
   def("pvc-cap-"+s,"pvc","PVC end cap "+L,"End cap PVC "+L,{ "12":1,"34":1.5,"1":2.5}[s],[sock(s)],"end");
+  def("pvc-3way-"+s,"pvc","PVC 3-way corner elbow "+L,"Elbow tiga hala PVC "+L+" (side outlet)",{ "12":3,"34":4.5,"1":6.5}[s],[sock(s),sock(s),sock(s)],"corner","Turns the line into TWO perpendicular directions at once — corners for stands, frames and racks.");
+  def("pvc-tank-"+s,"pvc","PVC tank connector "+L,"Tank connector PVC "+L+" (bulkhead)",{ "12":4,"34":6,"1":9}[s],[sock(s),thm(s)],"inline","Passes through a tank wall — rubber washers and a locknut seal the hole; the male thread side goes outside.");
   def("gi-sock-"+s,"gi","GI socket "+L,"Soket GI "+L,{ "12":3,"34":4.5,"1":6.5}[s],[thf(s),thf(s)],"inline");
   def("gi-elbow-"+s,"gi","GI elbow 90° "+L,"Elbow GI "+L,{ "12":4,"34":5.5,"1":8.5}[s],[thf(s),thf(s)],"elbow");
   def("gi-tee-"+s,"gi","GI equal tee "+L,"Tee GI "+L,{ "12":5,"34":7,"1":10}[s],[thf(s),thf(s),thf(s)],"tee");
@@ -287,6 +289,7 @@ for(const s of SYS.hdpe.sizes){const t=SYS.hdpe.thread[s];
   def("hd-ma-"+s,"hdpe","HDPE male adaptor "+s+"mm × "+SZL[t],"Male adaptor poly "+s+"mm×"+SZL[t],{ "20":4,"25":5,"32":7}[s],[comp(s),thm(t)],"inline","HDPE→thread transition (male side).");
   def("hd-fa-"+s,"hdpe","HDPE female adaptor "+s+"mm × "+SZL[t],"Female adaptor poly "+s+"mm×"+SZL[t],{ "20":5,"25":6,"32":8}[s],[comp(s),thf(t)],"inline","HDPE→thread transition (female side).");
   def("hd-plug-"+s,"hdpe","HDPE end plug "+s+"mm","End plug poly "+s+"mm",{ "20":4,"25":5,"32":7}[s],[comp(s)],"end");
+  def("hd-valve-"+s,"hdpe","HDPE stopcock "+s+"mm (compression)","Stopcock poly "+s+"mm",{ "20":12,"25":15,"32":22}[s],[comp(s),comp(s)],"inline","Shut-off for poly pipe lines — compression both ends, no glue or tape.");
 }
 for(const [b,sm] of [["25","20"],["32","25"],["32","20"]])
   def("hd-red-"+b+"-"+sm,"hdpe","HDPE reducing coupler "+b+"→"+sm+"mm","Reducer poly "+b+"×"+sm+"mm",8,[comp(b),comp(sm)],"inline","Steps poly pipe down a size.");
@@ -304,7 +307,9 @@ for(const s of SYS.ppr.sizes){const t=SYS.ppr.thread[s];
   def("ppr-ma-"+s,"ppr","PPR male adaptor "+s+"mm × "+SZL[t]+" (brass insert)","Male adaptor PPR "+s+"mm",{ "20":6,"25":8,"32":11}[s],[fus(s),thm(t)],"inline","PPR→thread transition (male side).");
   def("ppr-fa-"+s,"ppr","PPR female adaptor "+s+"mm × "+SZL[t]+" (brass insert)","Female adaptor PPR "+s+"mm",{ "20":7,"25":9,"32":12}[s],[fus(s),thf(t)],"inline","PPR→thread transition (female side).");
   def("ppr-cap-"+s,"ppr","PPR end cap "+s+"mm","End cap PPR "+s+"mm",1.5,[fus(s)],"end");
+  if(s!=="32")def("ppr-valve-"+s,"ppr","PPR ball valve "+s+"mm","Ball valve PPR "+s+"mm",{ "20":15,"25":19}[s],[fus(s),fus(s)],"inline","Shut-off point on PPR lines — fusion-welded both sides.");
 }
+def("flex-12","brass","Flexible hose connector ½″ × 30 cm","Hos fleksibel ½″ (stainless braided)",8,[thf("12"),thf("12")],"inline","Braided flexi hose with swivel nuts both ends — joins two male threads even when they don't line up perfectly.");
 def("tap-bib","brass","Bib tap ½″ (garden/wall tap)","Pili bib tap ½″",12,[thm("12")],"end","Standard Malaysian wall tap. Its male thread screws into any ½″ female port.");
 def("tap-ball","brass","Ball bib tap ½″ (quarter-turn)","Pili ball bib ½″ stainless",22,[thm("12")],"end","Smoother quarter-turn tap; same ½″ male inlet.");
 const DEFBY = Object.fromEntries(DEFS.map(d=>[d.id,d]));
@@ -334,21 +339,23 @@ function moves(spec){
       if(match(spec,f.ports[i])) out.push({step:{type:"fit",def:f,via:i},next:f.ports[1-i],cost:f.price});
   return out;
 }
-function exploreChains(A,maxSteps){ // every reachable connection type + the cheapest-ish path to it
+function exploreChains(A,maxSteps){ // fewest pieces first; among equal-length paths, the cheapest
   maxSteps=maxSteps||4;
   const out=new Map();out.set(specKey(A),{spec:A,steps:[],cost:0});
   let frontier=[{s:A,steps:[],cost:0}];
   for(let d=0;d<maxSteps;d++){
-    const next=[];
+    const cand=new Map(); // per level, keep the cheapest route to each connection type
     for(const st of frontier){
-      for(const m of moves(st.s).sort((a,b)=>a.cost-b.cost)){
+      for(const m of moves(st.s)){
         const k=specKey(m.next);
         if(out.has(k)) continue;
-        const cand={spec:m.next,steps:st.steps.concat([m.step]),cost:st.cost+m.cost};
-        out.set(k,cand);next.push({s:cand.spec,steps:cand.steps,cost:cand.cost});
+        const c={spec:m.next,steps:st.steps.concat([m.step]),cost:st.cost+m.cost};
+        const prev=cand.get(k);
+        if(!prev||c.cost<prev.cost) cand.set(k,c);
       }
     }
-    frontier=next;
+    frontier=[];
+    for(const c of cand.values()){out.set(specKey(c.spec),c);frontier.push({s:c.spec,steps:c.steps,cost:c.cost});}
   }
   return [...out.values()];
 }
@@ -457,6 +464,16 @@ function layout(n,p0,dIn,out){
       out.shapes.push({t:"elbow",n,a:p0,c,b:e,d:dIn,def:d});
       const other=n.via===0?1:0;
       exits=[{key:other,spec:d.ports[other],pos:e,dir:nd}];
+    } else if(d.geo==="corner"){ // 3-way corner: two perpendicular outlets
+      const ps=portsOf(n);
+      let o1=n.meta.out;
+      if(o1==null||o1===dIn||o1===OPP(dIn)) o1=PERPS(dIn)[0];
+      let o2=n.meta.out2;
+      const valid=d2=>d2!==dIn&&d2!==OPP(dIn)&&d2!==o1&&d2!==OPP(o1);
+      if(o2==null||!valid(o2)) o2=[4,5,0,1,2,3].find(valid);
+      const c=pos(p0,dIn,ELB_ARM), e1=pos(c,o1,ELB_ARM), e2=pos(c,o2,ELB_ARM);
+      out.shapes.push({t:"corner",n,a:p0,c,b:e1,bp:e2,d:dIn,def:d});
+      exits=[{key:ps[0].key,spec:ps[0].spec,pos:e1,dir:o1},{key:ps[1].key,spec:ps[1].spec,pos:e2,dir:o2}];
     } else if(d.geo==="tee"){
       const ps=portsOf(n);
       if(n.via===2){ // entered through the middle: run lies across the incoming line
@@ -667,6 +684,15 @@ function meshForShape(arr,s,pick){
     endDetail(arr,s.a,V.norm(V.sub(s.a,s.m)),d.ports[0],col,pick);
     endDetail(arr,s.b,V.norm(V.sub(s.b,s.m)),d.ports[1],col,pick);
     endDetail(arr,s.bp,V.norm(V.sub(s.bp,s.m)),d.ports[2],col,pick);
+  } else if(s.t==="corner"){
+    const d=s.def, sys=SYS[d.sys], r=radOf(d.ports[0].sz)*1.35, col=hex2rgb(sys.fit);
+    cylinder(arr,s.a,s.c,r,14,col,pick,true);
+    cylinder(arr,s.c,s.b,r,14,col,pick,true);
+    cylinder(arr,s.c,s.bp,r,14,col,pick,true);
+    sphere(arr,s.c,r*1.02,col,pick);
+    endDetail(arr,s.a,V.norm(V.sub(s.a,s.c)),d.ports[0],col,pick);
+    endDetail(arr,s.b,V.norm(V.sub(s.b,s.c)),d.ports[1],col,pick);
+    endDetail(arr,s.bp,V.norm(V.sub(s.bp,s.c)),d.ports[2],col,pick);
   } else if(s.t==="start"){
     const grey=hex2rgb("#8A939B");
     if(s.n.data==="tank"){
@@ -1050,6 +1076,7 @@ function pipeThumb(sys,sz){
 function defThumb(d){
   return thumbSrc(d.id,arr=>{
     if(d.geo==="elbow") meshForShape(arr,{t:"elbow",def:d,a:[-.11,0,0],c:[0,0,0],b:[0,.11,0],d:0},NOPICK);
+    else if(d.geo==="corner") meshForShape(arr,{t:"corner",def:d,a:[-.11,0,0],c:[0,0,0],b:[0,.11,0],bp:[0,0,.11],d:0},NOPICK);
     else if(d.geo==="tee") meshForShape(arr,{t:"tee",def:d,a:[-.13,0,0],b:[.13,0,0],m:[0,0,0],bp:[0,.13,0],d:0},NOPICK);
     else meshForShape(arr,{t:d.geo==="end"?"endfit":"inline",def:d,a:[0,0,0],b:[d.geo==="end"?END_LEN:FIT_LEN,0,0],d:0},NOPICK);
   });
@@ -1145,7 +1172,7 @@ function renderPanels(){
     if(selNode.kind==="fit"){
       const d=DEFBY[selNode.data];
       const isTap=d.id.startsWith("tap");
-      if(d.geo==="elbow"||d.geo==="tee"||isTap){
+      if(d.geo==="elbow"||d.geo==="tee"||d.geo==="corner"||isTap){
         const b=document.createElement("button");b.className="btn";b.style.marginBottom="8px";
         b.textContent="↻ Rotate direction";
         b.addEventListener("click",()=>{
@@ -1153,6 +1180,14 @@ function renderPanels(){
           if(isTap){
             const cur=selNode.meta.face??(selNode._d<4?selNode._d:0);
             selNode.meta.face=(cur+1)%4;
+          } else if(d.geo==="corner"){
+            const combos=[];
+            for(const o of PERPS(selNode._d))
+              for(const o2 of [0,1,2,3,4,5])
+                if(o2!==selNode._d&&o2!==OPP(selNode._d)&&o2!==o&&o2!==OPP(o)) combos.push([o,o2]);
+            let idx=combos.findIndex(x=>x[0]===(selNode.meta.out??PERPS(selNode._d)[0])&&x[1]===selNode.meta.out2);
+            idx=(idx+1)%combos.length;
+            selNode.meta.out=combos[idx][0];selNode.meta.out2=combos[idx][1];
           } else {
             const ps=PERPS(selNode._d);
             const kmeta=d.geo==="elbow"?"out":(selNode.via===2?"runDir":"branch");
@@ -1270,6 +1305,11 @@ function renderPanels(){
     if(d.geo==="elbow"){
       const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
       ps.forEach((o,i)=>mk(btns,labs[i],()=>addWith({out:o})));
+    } else if(d.geo==="corner"){
+      const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
+      ps.forEach((o,i)=>mk(btns,labs[i],()=>addWith({out:o})));
+      c.querySelector(".ct").insertAdjacentHTML("beforeend",
+        `<div class="note">The second outlet points perpendicular automatically — select the part after placing and use ↻ Rotate to cycle all orientations.</div>`);
     } else if(d.geo==="tee"){
       const labs=dirLabels(selPort.dir),ps=PERPS(selPort.dir);
       ps.forEach((o,i)=>mk(btns,"branch "+labs[i],()=>addWith({branch:o})));
@@ -1286,7 +1326,7 @@ function renderPanels(){
   const catOf=d=>{
     if(d.geo==="end")return "finish";
     if(d.id.includes("valve"))return "valves";
-    if(d.geo==="elbow")return "elbows";
+    if(d.geo==="elbow"||d.geo==="corner")return "elbows";
     if(d.geo==="tee")return "tees";
     if(isTransition(d))return "adapters";
     return "couplers";
