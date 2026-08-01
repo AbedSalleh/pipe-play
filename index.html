@@ -372,6 +372,8 @@ function bestChainTo(reach,goal){ // goal(spec) -> info object or null
 
 /* ================= state ================= */
 let root=null, nid=0, selPort=null, selNode=null, undoStack=[];
+let floats=[]; // detached islands: {node, pos, dir} — pos is where the island's entry connector sits
+let snapTarget=null; // open port a dragged island would snap to on release
 const openCats=new Set(["pipes"]); // which attach-panel categories stay expanded
 const $=id=>document.getElementById(id);
 
@@ -395,13 +397,45 @@ function attach(parent,portKey,child){ // note: caller is responsible for pushUn
   child.joint = methodOf(psp,csp);
   return child;
 }
-function removeNode(n){
-  if(!n.parent) return;
+function islandOf(n){
+  let t=n;while(t.parent)t=t.parent;
+  if(t===root)return null;
+  return floats.find(f=>f.node===t)||null;
+}
+function entrySpecOf(n){
+  if(n.kind==="pipe")return pipeEndSpec(n.data.sys,n.data.sz);
+  if(n.kind==="fit")return DEFBY[n.data].ports[n.via];
+  return null;
+}
+function removeNode(n){ // remove n and everything after it
+  const isl=n.parent?null:islandOf(n);
+  if(!n.parent&&!isl) return;
   pushUndo();
-  delete n.parent.children[n.parentPort];
+  if(n.parent) delete n.parent.children[n.parentPort];
+  else floats.splice(floats.indexOf(isl),1);
   selNode=null; selPort=null;
 }
-function pushUndo(){ undoStack.push(serialize(root)); if(undoStack.length>60) undoStack.shift(); }
+function removeSingle(n){ // remove only n; what followed floats free
+  const isl=n.parent?null:islandOf(n);
+  if(!n.parent&&!isl) return;
+  pushUndo();
+  for(const k in n.children){
+    const c=n.children[k];
+    c.parent=null;c.parentPort=null;
+    floats.push({node:c,pos:(c._p0||[0.3,0.3,0.3]).slice(),dir:(c._d!=null?c._d:0)});
+  }
+  n.children={};
+  if(n.parent) delete n.parent.children[n.parentPort];
+  else floats.splice(floats.indexOf(isl),1);
+  selNode=null; selPort=null;
+}
+function snapshot(){return JSON.stringify({t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir}))});}
+function restore(s){
+  const o=JSON.parse(s);
+  root=build(o.t);
+  floats=(o.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
+}
+function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length>60) undoStack.shift(); }
 function serialize(n){
   if(!n) return null;
   const o={k:n.kind,d:n.data,m:n.meta,v:n.via,c:{}};
@@ -824,9 +858,10 @@ function rebuildScene(){
   if(!ENG)return;
   pickTable=[null];lastPorts=[];sceneLabels=[];bbox=null;
   const arr=[];
-  if(root){
+  if(root||floats.length){
     const out={shapes:[],ports:[],labels:[]};
-    layout(root,[0,0,0],root.meta.face??0,out);
+    if(root)layout(root,[0,0,0],root.meta.face??0,out);
+    for(const fl of floats)layout(fl.node,fl.pos,fl.dir,out);
     const nodePick=new Map();
     for(const s of out.shapes){
       let id=nodePick.get(s.n);
@@ -836,6 +871,9 @@ function rebuildScene(){
     for(const p of out.ports){
       p.pickId=pickTable.length;pickTable.push({type:"port",port:p});
       lastPorts.push(p);
+    }
+    for(const fl of floats){
+      fl.pickId=pickTable.length;pickTable.push({type:"entry",fl});
     }
     sceneLabels=out.labels;
     // bbox
@@ -869,6 +907,25 @@ function rebuildScene(){
     l.el=d;labelsEl.appendChild(d);
   }
 }
+function eyeOf(){
+  return [cam.target[0]+cam.dist*Math.cos(cam.pitch)*Math.cos(cam.yaw),
+          cam.target[1]+cam.dist*Math.cos(cam.pitch)*Math.sin(cam.yaw),
+          cam.target[2]+cam.dist*Math.sin(cam.pitch)];
+}
+function groundPoint(px,py){ // world point under the cursor, on the plane of the orbit target
+  const W=canvas.clientWidth,H=canvas.clientHeight;
+  const eye=eyeOf();
+  const fwd=V.norm(V.sub(cam.target,eye));
+  const right=V.norm(V.cross(fwd,[0,0,1]));
+  const up=V.cross(right,fwd);
+  const t=Math.tan(0.41);
+  const nx=(px/W)*2-1, ny=1-(py/H)*2;
+  const dir=V.norm(V.add(V.add(fwd,V.scl(right,nx*t*(W/Math.max(1,H)))),V.scl(up,ny*t)));
+  if(Math.abs(dir[2])<1e-4)return null;
+  const tt=(cam.target[2]-eye[2])/dir[2];
+  if(tt<=0)return null;
+  return V.add(eye,V.scl(dir,tt));
+}
 function project(p){
   const m=lastVP;
   const x=m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12];
@@ -884,10 +941,8 @@ function drawScene(mode){
     canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);
   }
   gl.viewport(0,0,canvas.width,canvas.height);
-  const eye=[cam.target[0]+cam.dist*Math.cos(cam.pitch)*Math.cos(cam.yaw),
-             cam.target[1]+cam.dist*Math.cos(cam.pitch)*Math.sin(cam.yaw),
-             cam.target[2]+cam.dist*Math.sin(cam.pitch)];
-  const vp=m4mul(m4persp(0.82,W/Math.max(1,H),0.05,200),m4look(eye,cam.target,[0,0,1]));
+  const eye=eyeOf();
+  const vp=m4mul(m4persp(0.82,W/Math.max(1,H),0.06,600),m4look(eye,cam.target,[0,0,1]));
   lastVP=vp;lastEye=eye;
   const bg=themeColors.bg;
   gl.clearColor(mode?0:bg[0],mode?0:bg[1],mode?0:bg[2],1);
@@ -917,11 +972,21 @@ function drawScene(mode){
   gl.uniform1f(ENG.U.uni,1);
   for(const p of lastPorts){
     const sel=selPort&&selPort.node===p.node&&selPort.key===p.key;
+    const snap=snapTarget&&snapTarget.node===p.node&&snapTarget.key===p.key;
     const puls=mode?1:(1+0.14*Math.sin(t*3+p.pickId));
-    const r=mode?.07:(sel?.065:.048)*puls; // pick pass: bigger, steady target
+    const r=mode?.07:(snap?.085:(sel?.065:.048)*puls); // pick pass: bigger, steady target
     gl.uniformMatrix4fv(ENG.U.model,false,m4ts(p.pos,r));
-    gl.uniform3fv(ENG.U.color,sel?themeColors.ink:themeColors.accent);
+    gl.uniform3fv(ENG.U.color,snap?[0.20,0.68,0.38]:(sel?themeColors.ink:themeColors.accent));
     gl.uniform3fv(ENG.U.pick,encPick(p.pickId));
+    gl.drawArrays(gl.TRIANGLES,0,c.dynCount);
+  }
+  // blue entry connectors on floating islands (drag these onto a matching orange ball)
+  for(const fl of floats){
+    const held=drag&&drag.mode==="island"&&drag.fl===fl;
+    const r=mode?.08:(held?.068:.054*(1+0.1*Math.sin(t*2.2)));
+    gl.uniformMatrix4fv(ENG.U.model,false,m4ts(fl.pos,r));
+    gl.uniform3fv(ENG.U.color,held?[0.12,0.42,0.78]:[0.18,0.48,0.84]);
+    gl.uniform3fv(ENG.U.pick,encPick(fl.pickId||0));
     gl.drawArrays(gl.TRIANGLES,0,c.dynCount);
   }
   // growth-direction arrows on every open connection
@@ -973,15 +1038,36 @@ function fitView(){
   if(!bbox){cam.target=[0.6,0,0.2];cam.dist=4;return;}
   const c=[(bbox.mn[0]+bbox.mx[0])/2,(bbox.mn[1]+bbox.mx[1])/2,(bbox.mn[2]+bbox.mx[2])/2];
   const r=Math.max(0.6,V.len(V.sub(bbox.mx,bbox.mn))/2);
-  cam.target=c;cam.dist=Math.min(50,r*2.4+0.8);
+  cam.target=c;cam.dist=Math.min(150,r*2.4+0.8);
 }
 
-/* ---- camera controls ---- */
+/* ---- camera controls + island dragging ---- */
 let drag=null;
+function updateSnapTarget(fl){
+  snapTarget=null;
+  const es=entrySpecOf(fl.node);
+  if(!es)return;
+  let bd=0.35;
+  for(const p of lastPorts){
+    if(islandOf(p.node)===fl)continue;
+    if(!match(p.spec,es))continue;
+    const d=Math.hypot(p.pos[0]-fl.pos[0],p.pos[1]-fl.pos[1],p.pos[2]-fl.pos[2]);
+    if(d<bd){bd=d;snapTarget={node:p.node,key:p.key,spec:p.spec,pos:p.pos};}
+  }
+}
 canvas.addEventListener("pointerdown",e=>{
   canvas.setPointerCapture(e.pointerId);
+  const r=canvas.getBoundingClientRect();
+  const hit=pick(e.clientX-r.left,e.clientY-r.top);
+  const pan=e.shiftKey||e.button===2||e.button===1;
+  let fl=null;
+  if(!pan&&hit){
+    if(hit.type==="entry")fl=hit.fl;
+    else if(hit.type==="node"){fl=islandOf(hit.node);}
+  }
   drag={id:e.pointerId,x:e.clientX,y:e.clientY,sx:e.clientX,sy:e.clientY,
-        pan:e.shiftKey||e.button===2||e.button===1,pts:new Map([[e.pointerId,[e.clientX,e.clientY]]])};
+        mode:fl?"island":(pan?"pan":"orbit"),fl,startPos:fl?fl.pos.slice():null,hit,moved:false,
+        pts:new Map([[e.pointerId,[e.clientX,e.clientY]]])};
   canvas.classList.add("dragging");
 });
 canvas.addEventListener("pointermove",e=>{
@@ -990,14 +1076,28 @@ canvas.addEventListener("pointermove",e=>{
   if(drag.pts.size===2){
     const pts=[...drag.pts.values()];
     const d=Math.hypot(pts[0][0]-pts[1][0],pts[0][1]-pts[1][1]);
-    if(drag.lastPinch)cam.dist=Math.max(.4,Math.min(60,cam.dist*drag.lastPinch/d));
+    if(drag.lastPinch)cam.dist=Math.max(.4,Math.min(160,cam.dist*drag.lastPinch/d));
     drag.lastPinch=d;
     return;
   }
   if(e.pointerId!==drag.id)return;
+  if(drag.mode==="island"){
+    const dxT=e.clientX-drag.sx, dyT=e.clientY-drag.sy;
+    if(!drag.moved&&Math.hypot(dxT,dyT)>5){drag.moved=true;pushUndo();}
+    if(!drag.moved)return;
+    // horizontal mouse = move along screen-right; vertical mouse = move up/down in the world
+    const s=cam.dist*0.0016;
+    const right=[Math.cos(cam.yaw-Math.PI/2),Math.sin(cam.yaw-Math.PI/2),0];
+    drag.fl.pos=[drag.startPos[0]+right[0]*dxT*s,
+                 drag.startPos[1]+right[1]*dxT*s,
+                 drag.startPos[2]-dyT*s];
+    updateSnapTarget(drag.fl);
+    rebuildScene();
+    return;
+  }
   const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
   drag.x=e.clientX;drag.y=e.clientY;
-  if(drag.pan){
+  if(drag.mode==="pan"){
     const s=cam.dist*0.0016;
     const right=[Math.cos(cam.yaw-Math.PI/2),Math.sin(cam.yaw-Math.PI/2),0];
     cam.target=V.add(cam.target,V.scl(right,dx*s));
@@ -1013,12 +1113,23 @@ function endDrag(e){
   if(e.pointerId===drag.id){
     const moved=Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy);
     canvas.classList.remove("dragging");
-    const wasPan=drag.pan;drag=null;
-    if(moved<5&&!wasPan){
-      const r=canvas.getBoundingClientRect();
-      const hit=pick(e.clientX-r.left,e.clientY-r.top);
+    const d=drag;drag=null;
+    if(d.mode==="island"&&d.moved){
+      if(snapTarget){ // snap: the island becomes part of the line again
+        const fl=d.fl, tgt=snapTarget;snapTarget=null;
+        floats.splice(floats.indexOf(fl),1);
+        attach(tgt.node,tgt.key,fl.node);
+        toast("Snapped together");
+      }
+      snapTarget=null;
+      refresh();
+      return;
+    }
+    if(moved<5&&d.mode!=="pan"){
+      const hit=d.hit;
       if(!hit){selPort=null;selNode=null;}
       else if(hit.type==="port"){selPort=hit.port;selNode=null;}
+      else if(hit.type==="entry"){selNode=hit.fl.node;selPort=null;}
       else{selNode=hit.node;selPort=null;}
       renderPanels();
     }
@@ -1029,10 +1140,27 @@ canvas.addEventListener("pointercancel",endDrag);
 canvas.addEventListener("contextmenu",e=>e.preventDefault());
 canvas.addEventListener("wheel",e=>{
   e.preventDefault();
-  cam.dist=Math.max(.4,Math.min(60,cam.dist*Math.exp(e.deltaY*0.0022)));
+  const nd=Math.max(.4,Math.min(160,cam.dist*Math.exp(e.deltaY*0.0022)));
+  if(nd<cam.dist){ // zooming in: pull the view toward what's under the cursor
+    const r=canvas.getBoundingClientRect();
+    const gp=groundPoint(e.clientX-r.left,e.clientY-r.top);
+    if(gp){
+      const k=(1-nd/cam.dist)*0.9;
+      cam.target=[cam.target[0]+(gp[0]-cam.target[0])*k,
+                  cam.target[1]+(gp[1]-cam.target[1])*k,
+                  cam.target[2]+(gp[2]-cam.target[2])*k];
+    }
+  }
+  cam.dist=nd;
 },{passive:false});
+canvas.addEventListener("dblclick",e=>{ // double-click a part to orbit around it
+  const r=canvas.getBoundingClientRect();
+  const hit=pick(e.clientX-r.left,e.clientY-r.top);
+  if(hit&&hit.type==="node"&&hit.node._p0){cam.target=hit.node._p0.slice();toast("Orbiting around this part");}
+  else if(hit&&hit.type==="port"){cam.target=hit.port.pos.slice();}
+});
 $("zin").addEventListener("click",()=>cam.dist=Math.max(.4,cam.dist/1.45));
-$("zout").addEventListener("click",()=>cam.dist=Math.min(60,cam.dist*1.45));
+$("zout").addEventListener("click",()=>cam.dist=Math.min(160,cam.dist*1.45));
 $("zfit").addEventListener("click",fitView);
 
 /* ---- thumbnails (little 3D renders of every part) ---- */
@@ -1199,11 +1327,35 @@ function renderPanels(){
         el.appendChild(b);
         el.insertAdjacentHTML("beforeend",`<p class="note" style="margin:0 0 8px">${isTap?"Spins the tap spout to face another way.":"Rotates where the "+(d.geo==="elbow"?"turn":"branch")+" points — cycle through the four directions and watch it in 3D."}</p>`);
       }
+      /* replace-in-place: same shape, same connections — everything after it stays */
+      const sig=d.ports.map(p=>specKey(p)).join("|");
+      const cands=DEFS.filter(x=>x.id!==d.id&&x.geo===d.geo&&x.ports.map(p=>specKey(p)).join("|")===sig);
+      if(cands.length){
+        el.insertAdjacentHTML("beforeend",`<div class="grouph">Replace with — connections stay intact</div>`);
+        for(const x of cands){
+          const c=document.createElement("div");c.className="card";
+          c.innerHTML=`<img class="thumb" alt="" src="${defThumb(x)}"><div class="ct"><div class="nm">${x.name}</div><div class="store">Ask for: ${x.store}</div>${x.note?`<div class="note">${x.note}</div>`:""}<div class="row"><span class="price">≈ RM ${x.price.toFixed(2)}</span><span class="rb"></span></div></div>`;
+          const b2=document.createElement("button");b2.className="mini add";b2.textContent="Swap";
+          b2.addEventListener("click",()=>{pushUndo();selNode.data=x.id;refresh();toast("Swapped — everything stays connected");});
+          c.querySelector(".rb").appendChild(b2);
+          el.appendChild(c);
+        }
+      }
     }
-    if(selNode.parent){
-      const b=document.createElement("button");b.className="btn dangerbtn";b.textContent="Remove this part (and everything after it)";
+    const isl=islandOf(selNode);
+    if(isl)el.insertAdjacentHTML("beforeend",`<p class="note"><b>This piece is floating.</b> Drag it in 3D until its blue connector sits near a matching orange ball — it turns green when it can snap — then let go to join them.</p>`);
+    if(selNode.parent||isl){
+      const wrap=document.createElement("div");wrap.style.cssText="display:flex;flex-direction:column;gap:6px";
+      if(Object.keys(selNode.children).length){
+        const b1=document.createElement("button");b1.className="btn";
+        b1.textContent="Detach this part only — what follows floats free";
+        b1.addEventListener("click",()=>{removeSingle(selNode);refresh();});
+        wrap.appendChild(b1);
+      }
+      const b=document.createElement("button");b.className="btn dangerbtn";b.textContent="Remove this part and everything after it";
       b.addEventListener("click",()=>{removeNode(selNode);refresh();});
-      el.appendChild(b);
+      wrap.appendChild(b);
+      el.appendChild(wrap);
     } else {
       el.insertAdjacentHTML("beforeend",`<p class="note">This is your starting point — use Clear (top right) to restart.</p>`);
     }
@@ -1385,6 +1537,7 @@ function collect(){
     if(n.joint)joints[n.joint]=(joints[n.joint]||0)+1;
     for(const k in n.children)walk(n.children[k]);};
   walk(root);
+  for(const fl of floats)walk(fl.node);
   return {pipes,fits,joints};
 }
 function updateBOM(){
@@ -1481,11 +1634,11 @@ function showTextModal(msg,text){
 }
 $("undo").addEventListener("click",()=>{
   if(!undoStack.length){toast("Nothing to undo");return;}
-  root=build(undoStack.pop());selPort=null;selNode=null;refresh();
+  restore(undoStack.pop());selPort=null;selNode=null;snapTarget=null;refresh();
 });
 $("clear").addEventListener("click",async()=>{
-  if(root&&!(await confirmUI("Clear the whole assembly? (Undo can bring it back)")))return;
-  pushUndo();root=null;selPort=null;selNode=null;refresh();fitView();
+  if((root||floats.length)&&!(await confirmUI("Clear the whole assembly? (Undo can bring it back)")))return;
+  pushUndo();root=null;floats=[];selPort=null;selNode=null;snapTarget=null;refresh();fitView();
 });
 /* ---- save files (three slots, like emulator save states) ---- */
 const NSLOTS=3, slotKey=i=>"pipeplay-slot-"+i;
@@ -1503,7 +1656,8 @@ function readSlot(i){
 }
 function countParts(){
   let n=0;const walk=x=>{if(!x)return;if(x.kind!=="start")n++;for(const k in x.children)walk(x.children[k]);};
-  walk(root);return n;
+  walk(root);for(const fl of floats)walk(fl.node);
+  return n;
 }
 function renderSlots(){
   const pop=$("filespop");pop.innerHTML="";
@@ -1518,7 +1672,7 @@ function renderSlots(){
     bSave.addEventListener("click",async()=>{
       if(!root){toast("Nothing to save yet — build something first");return;}
       if(s&&!(await confirmUI(`Overwrite File ${i}?`)))return;
-      localStorage.setItem(slotKey(i),JSON.stringify({t:serialize(root),ts:Date.now(),parts:countParts(),total:window._bomTotal??null}));
+      localStorage.setItem(slotKey(i),JSON.stringify({t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),ts:Date.now(),parts:countParts(),total:window._bomTotal??null}));
       toast(`Saved to File ${i}`);renderSlots();
     });
     row.appendChild(bSave);
@@ -1526,7 +1680,9 @@ function renderSlots(){
     bLoad.addEventListener("click",()=>{
       const cur=readSlot(i);
       if(!cur){toast(`File ${i} is empty`);return;}
-      pushUndo();root=build(cur.t);selPort=null;selNode=null;refresh();fitView();
+      pushUndo();root=build(cur.t);
+      floats=(cur.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
+      selPort=null;selNode=null;snapTarget=null;refresh();fitView();
       closeFiles();toast(`Loaded File ${i} — Undo brings your previous design back`);
     });
     row.appendChild(bLoad);
@@ -1586,7 +1742,7 @@ const EXAMPLES={
 $("examples").addEventListener("change",e=>{
   const v=e.target.value;e.target.value="";
   if(!v)return;
-  pushUndo();root=build(JSON.parse(JSON.stringify(EXAMPLES[v])));selPort=null;selNode=null;
+  pushUndo();root=build(JSON.parse(JSON.stringify(EXAMPLES[v])));floats=[];selPort=null;selNode=null;snapTarget=null;
   refresh();fitView();
   toast("Example loaded — orbit around it, then click any orange ball to keep building");
 });
@@ -1599,7 +1755,8 @@ window.PP={
   proj:(p)=>{const r=canvas.getBoundingClientRect();const pr=project(p);
     return {x:r.left+(pr[0]+1)/2*canvas.clientWidth,y:r.top+(1-pr[1])/2*canvas.clientHeight};},
   ser:()=>serialize(root),
-  pickAt:(x,y)=>{const h=pick(x,y);return h?{type:h.type,kind:h.node?h.node.kind:h.port.spec.t}:null;},
+  floats:()=>floats.map(f=>({pos:f.pos.slice(),entry:(entrySpecOf(f.node)||{}).t})),
+  pickAt:(x,y)=>{const h=pick(x,y);return h?{type:h.type,kind:h.node?h.node.kind:(h.port?h.port.spec.t:"entry")}:null;},
   webgl:!!ENG
 };
 
