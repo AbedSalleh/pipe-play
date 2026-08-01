@@ -1873,14 +1873,22 @@ function renderSlots(){
     row.appendChild(bDel);
     pop.appendChild(row);
   }
-  // move designs between devices/profiles without any account
+  // move designs between devices/accounts without any server
   const xrow=document.createElement("div");xrow.className="slotrow";
-  xrow.innerHTML=`<div class="info"><div class="snm">Move between devices</div><div class="smeta">Design text works anywhere — no account needed</div></div>`;
+  xrow.innerHTML=`<div class="info"><div class="snm">Move between devices</div><div class="smeta">Current design + saved Files as one text — works anywhere</div></div>`;
   const bx=document.createElement("button");bx.className="mini";bx.textContent="Export";
   bx.addEventListener("click",()=>{
-    if(!root&&!floats.length){toast("Nothing to export yet");return;}
-    const payload={app:"pipe-play",ver:1,ts:Date.now(),t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir}))};
-    showTextModal("Copy this design text — on another device or profile, use Files → Import:",JSON.stringify(payload));
+    const payload={app:"pipe-play",ver:2,ts:Date.now()};
+    if(root||floats.length){
+      payload.t=serialize(root);
+      payload.f=floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir}));
+    }
+    const slots={};let ns=0;
+    for(let i=1;i<=NSLOTS;i++){const sv=readSlot(i);if(sv){slots[i]=sv;ns++;}}
+    if(ns)payload.slots=slots;
+    if(!payload.t&&!ns){toast("Nothing to export — no design on the canvas and no saved Files");return;}
+    const what=[payload.t?"the current design":"",ns?ns+" saved File"+(ns>1?"s":""):""].filter(Boolean).join(" and ");
+    showTextModal(`Copy this text — it contains ${what}. On any device or account, use Files → Import:`,JSON.stringify(payload));
   });
   xrow.appendChild(bx);
   const bi=document.createElement("button");bi.className="mini";bi.textContent="Import";
@@ -1890,22 +1898,49 @@ function renderSlots(){
 }
 function importModal(){
   const back=document.createElement("div");back.className="modalback";
-  back.innerHTML=`<div class="modal"><p>Paste a design text (made with Files → Export):</p><textarea></textarea>
-    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Load design</button></div></div>`;
+  back.innerHTML=`<div class="modal"><p>Paste a text made with Files → Export (a design, saved Files, or both):</p><textarea></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Import</button></div></div>`;
   back.addEventListener("click",e=>{
     e.stopPropagation();
     if(e.target===back){back.remove();return;}
     const b=e.target.closest("button");if(!b)return;
-    if(b.dataset.x==="1"){
-      try{
-        const o=JSON.parse(back.querySelector("textarea").value);
-        if(o.app!=="pipe-play")throw new Error("not ours");
+    if(b.dataset.x!=="1"){back.remove();return;}
+    let o;
+    try{
+      o=JSON.parse(back.querySelector("textarea").value);
+      if(o.app!=="pipe-play")throw new Error("not ours");
+    }catch(err){toast("That doesn't look like a Pipe Play text");return;}
+    back.remove();
+    (async()=>{
+      const done=[];
+      if(o.t){
         pushUndo();root=build(o.t);
         floats=(o.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
-        selPort=null;selNode=null;snapTarget=null;refresh();fitView();closeFiles();toast("Design loaded");
-      }catch(err){toast("That doesn't look like a Pipe Play design text");return;}
-    }
-    back.remove();
+        selPort=null;selNode=null;snapTarget=null;refresh();fitView();
+        done.push("design loaded onto the canvas");
+      }
+      const ids=o.slots?Object.keys(o.slots).filter(k=>o.slots[k]):[];
+      if(ids.length){
+        const occupied=ids.filter(k=>readSlot(+k));
+        const where=SB.sess?"your account":"this browser";
+        const q=occupied.length
+          ?`The text contains saved File${ids.length>1?"s":""} ${ids.join(", ")}. Restoring will overwrite File ${occupied.join(", ")} in ${where} — continue?`
+          :`Restore ${ids.length} saved File${ids.length>1?"s":""} from the text into ${where}?`;
+        if(await confirmUI(q)){
+          let okCount=0;
+          for(const k of ids){
+            try{
+              if(SB.sess)await saveCloudSlot(+k,o.slots[k]);
+              else localStorage.setItem(slotKey(+k),JSON.stringify(o.slots[k]));
+              okCount++;
+            }catch(err){toast("Couldn't restore File "+k+": "+friendlyAuthError(err));}
+          }
+          if(okCount)done.push(okCount+" File"+(okCount>1?"s":"")+" restored");
+        }
+      }
+      closeFiles();
+      toast(done.length?done.join(" · "):"That text had nothing to import");
+    })();
   });
   document.body.appendChild(back);back.querySelector("textarea").focus();
 }
