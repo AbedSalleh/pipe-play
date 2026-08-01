@@ -1788,7 +1788,10 @@ async function sbRest(path,opts){
     res=await doFetch();
   }
   if(!res.ok){const t=await res.text().catch(()=>"");throw new Error(t.slice(0,180)||("HTTP "+res.status));}
-  return res.status===204?null:res.json();
+  // writes reply 201/204 with an empty body — only parse JSON when there is some
+  const txt=await res.text().catch(()=>"");
+  if(!txt)return null;
+  try{return JSON.parse(txt);}catch(e){return null;}
 }
 const sessFrom=j=>({access_token:j.access_token,refresh_token:j.refresh_token,
   expires_at:Date.now()+((j.expires_in||3600)-90)*1000,email:(j.user&&j.user.email)||""});
