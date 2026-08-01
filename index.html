@@ -131,7 +131,9 @@
   .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:5px;border:1px solid rgba(0,0,0,.2)}
 
   .mtabs{display:none}
+  #mobilegate{display:none}
   @media (max-width: 980px){
+    #mobilegate{display:flex;position:fixed;inset:0;z-index:100;background:var(--bg);align-items:center;justify-content:center;text-align:center;padding:28px}
     body{font-size:13.5px}
     .app{height:100vh;height:100dvh}
     header{padding:6px 8px;gap:6px}
@@ -229,6 +231,14 @@
       <p style="font-size:11px;color:var(--mut);margin:0 0 10px"><a href="#" id="sbchange" style="color:var(--mut)">Change Supabase connection</a></p>
     </div>
     <button class="btn" id="guest" style="width:100%">Continue offline — designs stay in this browser only</button>
+  </div>
+</div>
+<div id="mobilegate">
+  <div style="max-width:320px">
+    <div style="font-size:42px">🔧</div>
+    <h2 style="margin:10px 0 8px">Pipe Play</h2>
+    <p style="color:var(--mut);margin:0 0 6px">This app is not available in mobile view at the moment — thanks for your support! 🙏</p>
+    <p style="color:var(--mut);font-size:12.5px;margin:0">Please open it on a desktop or laptop browser.</p>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -441,6 +451,7 @@ function bestChainTo(reach,goal){ // goal(spec) -> info object or null
 /* ================= state ================= */
 let root=null, nid=0, selPort=null, selNode=null, undoStack=[];
 let floats=[]; // detached islands: {node, pos, dir} — pos is where the island's entry connector sits
+let owned=new Set(); // shopping-list items marked "already have" — excluded from the total
 let snapTarget=null; // open port a dragged island would snap to on release
 const openCats=new Set(["pipes"]); // which attach-panel categories stay expanded
 const $=id=>document.getElementById(id);
@@ -497,11 +508,12 @@ function removeSingle(n){ // remove only n; what followed floats free
   else floats.splice(floats.indexOf(isl),1);
   selNode=null; selPort=null;
 }
-function snapshot(){return JSON.stringify({t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir}))});}
+function snapshot(){return JSON.stringify({t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),o:[...owned]});}
 function restore(s){
   const o=JSON.parse(s);
   root=build(o.t);
   floats=(o.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
+  owned=new Set(o.o||[]);
 }
 function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length>60) undoStack.shift(); }
 function persistCanvas(){ // the working canvas survives page reloads
@@ -1468,19 +1480,43 @@ function renderPanels(){
         el.appendChild(b);
         el.insertAdjacentHTML("beforeend",`<p class="note" style="margin:0 0 8px">${isTap?"Spins the tap spout to face another way.":"Rotates where the "+(d.geo==="elbow"?"turn":"branch")+" points — cycle through the four directions and watch it in 3D."}</p>`);
       }
-      /* replace-in-place: same shape, same connections — everything after it stays */
-      const sig=d.ports.map(p=>specKey(p)).join("|");
-      const cands=DEFS.filter(x=>x.id!==d.id&&x.geo===d.geo&&x.ports.map(p=>specKey(p)).join("|")===sig);
-      if(cands.length){
-        el.insertAdjacentHTML("beforeend",`<div class="grouph">Replace with — connections stay intact</div>`);
-        for(const x of cands){
-          const c=document.createElement("div");c.className="card";
-          c.innerHTML=`<img class="thumb" alt="" src="${defThumb(x)}"><div class="ct"><div class="nm">${x.name}</div><div class="store">Ask for: ${x.store}</div>${x.note?`<div class="note">${x.note}</div>`:""}<div class="row"><span class="price">≈ RM ${x.price.toFixed(2)}</span><span class="rb"></span></div></div>`;
-          const b2=document.createElement("button");b2.className="mini add";b2.textContent="Swap";
-          b2.addEventListener("click",()=>{pushUndo();selNode.data=x.id;refresh();toast("Swapped — everything stays connected");});
-          c.querySelector(".rb").appendChild(b2);
-          el.appendChild(c);
+      /* replace-in-place: only the ports actually IN USE must match, so a part
+         with a free end can swap to anything that serves the connected end(s) */
+      const usedIdx=[...new Set([selNode.via,...Object.keys(selNode.children).map(Number)])];
+      const cands=[];
+      for(const x of DEFS){
+        if(x.id===d.id||x.geo!==d.geo||x.ports.length!==d.ports.length)continue;
+        const maps=d.ports.length===2?[[0,1],[1,0]]:[[0,1,2]]; // 3-port parts in the catalog are equal-ended
+        for(const m of maps){
+          let ok=true;
+          for(const i of usedIdx)if(specKey(x.ports[m[i]])!==specKey(d.ports[i])){ok=false;break;}
+          if(ok){cands.push({def:x,map:m});break;}
         }
+      }
+      el.insertAdjacentHTML("beforeend",`<div class="grouph">Replace with — connections stay intact</div>`);
+      if(!cands.length){
+        el.insertAdjacentHTML("beforeend",`<p class="note" style="margin:0 0 8px">No other part offers this combination of connections in use (${usedIdx.map(i=>specLabel(d.ports[i])).join(" + ")}). To change it, remove or detach it instead.</p>`);
+      }
+      for(const cand of cands){
+        const x=cand.def;
+        const c=document.createElement("div");c.className="card";
+        c.innerHTML=`<img class="thumb" alt="" src="${defThumb(x)}"><div class="ct"><div class="nm">${x.name}</div><div class="store">Ask for: ${x.store}</div>${x.note?`<div class="note">${x.note}</div>`:""}<div class="row"><span class="price">≈ RM ${x.price.toFixed(2)}</span><span class="rb"></span></div></div>`;
+        const b2=document.createElement("button");b2.className="mini add";b2.textContent="Swap";
+        b2.addEventListener("click",()=>{
+          pushUndo();
+          const m=cand.map;
+          selNode.data=x.id;
+          selNode.via=m[selNode.via];
+          const nc={};
+          for(const k in selNode.children){
+            const ch=selNode.children[k];const nk=m[+k];
+            nc[nk]=ch;ch.parentPort=nk;
+          }
+          selNode.children=nc;
+          refresh();toast("Swapped — everything stays connected");
+        });
+        c.querySelector(".rb").appendChild(b2);
+        el.appendChild(c);
       }
     }
     const isl=islandOf(selNode);
@@ -1675,7 +1711,15 @@ function updateBOM(){
   const el=$("bom");el.innerHTML="";
   if(!root){el.innerHTML=`<p class="empty">Your shopping list builds itself as you snap parts together.</p>`;window._bomText="";window._bomTotal=null;$("mtot").textContent="0";return;}
   const {pipes,fits,joints}=collect();
-  let total=0,rows="";
+  let total=0,saved=0,rows="";
+  const rowHTML=(k,label,sub,cost)=>{ // tickable: "already have" rows drop out of the total
+    const off=owned.has(k);
+    if(off)saved+=cost;else total+=cost;
+    return `<tr style="${off?"opacity:.55":""}"><td><label style="display:flex;gap:7px;align-items:flex-start;cursor:pointer">
+      <input type="checkbox" class="own" data-k="${k}" ${off?"checked":""} title="Already have it — exclude from the total">
+      <span>${label}${sub?`<div class="sub">${sub}</div>`:""}${off?`<div class="sub" style="color:var(--ok)">already have — not counted</div>`:""}</span></label></td>
+      <td class="r" style="${off?"text-decoration:line-through":""}">RM ${cost.toFixed(2)}</td></tr>`;
+  };
   const pk=Object.keys(pipes);
   if(pk.length){
     rows+=`<tr><td colspan="2"><span class="eyebrow">Pipes</span></td></tr>`;
@@ -1684,26 +1728,26 @@ function updateBOM(){
       let buy,cost;
       if(S.perM){const bm=Math.ceil(m);cost=bm*S.perM[sz];buy=`buy ${bm} m (sold per meter)`;}
       else {const n=Math.ceil(m/S.unitLen);cost=n*S.perUnit[sz];buy=`buy ${n} × ${S.unitName}`;}
-      total+=cost;
-      rows+=`<tr><td><span class="swatch" style="background:${S.color}"></span>${S.label} ${S.szl(sz)}<div class="sub">${m} m needed → ${buy}</div></td><td class="r">RM ${cost.toFixed(2)}</td></tr>`;
+      rows+=rowHTML("p:"+k,`<span class="swatch" style="background:${S.color}"></span>${S.label} ${S.szl(sz)}`,`${m} m needed → ${buy}`,cost);
     }
   }
   const fk=Object.keys(fits);
   if(fk.length){
     rows+=`<tr><td colspan="2"><span class="eyebrow">Fittings</span></td></tr>`;
     for(const id of fk){
-      const d=DEFBY[id],q=fits[id],c=q*d.price;total+=c;
-      rows+=`<tr><td>${q} × ${d.name}<div class="sub">ask for: ${d.store}</div></td><td class="r">RM ${c.toFixed(2)}</td></tr>`;
+      const d=DEFBY[id],q=fits[id],c=q*d.price;
+      rows+=rowHTML("f:"+id,`${q} × ${d.name}`,`ask for: ${d.store}`,c);
     }
   }
   let cons="";
-  if(joints["solvent"]){total+=7;cons+=`<tr><td>PVC solvent cement (small tin)<div class="sub">covers ~40 joints — you have ${joints["solvent"]}</div></td><td class="r">RM 7.00</td></tr>`;}
-  if(joints["thread"]){const rolls=Math.ceil(joints["thread"]/8),c=rolls*1.5;total+=c;cons+=`<tr><td>${rolls} × PTFE thread seal tape<div class="sub">~8 joints per roll — you have ${joints["thread"]} threaded joints</div></td><td class="r">RM ${c.toFixed(2)}</td></tr>`;}
+  if(joints["solvent"])cons+=rowHTML("c:cement","PVC solvent cement (small tin)",`covers ~40 joints — you have ${joints["solvent"]}`,7);
+  if(joints["thread"]){const rolls=Math.ceil(joints["thread"]/8);cons+=rowHTML("c:tape",`${rolls} × PTFE thread seal tape`,`~8 joints per roll — you have ${joints["thread"]} threaded joints`,rolls*1.5);}
   if(joints["fusion"])cons+=`<tr><td>PPR welding iron<div class="sub">rent from kedai ~RM20–40/day (not in total)</div></td><td class="r">—</td></tr>`;
   if(cons)rows+=`<tr><td colspan="2"><span class="eyebrow">Consumables</span></td></tr>`+cons;
 
   el.insertAdjacentHTML("beforeend",`<table class="bom">${rows}</table>
-    <div class="total"><span>Estimated total</span><span>RM ${total.toFixed(2)}</span></div>`);
+    ${saved>0?`<div class="jsum" style="display:flex;justify-content:space-between"><span>Already have (excluded)</span><span style="font-family:var(--mono)">−RM ${saved.toFixed(2)}</span></div>`:""}
+    <div class="total"><span>Estimated total to buy</span><span>RM ${total.toFixed(2)}</span></div>`);
   const js=Object.entries(joints).map(([m,n])=>`${n} × ${METHODS[m].name.toLowerCase()}`).join(" · ");
   if(js)el.insertAdjacentHTML("beforeend",`<div class="jsum">Joints to make: ${js}</div>`);
   if(joints["compression"]||joints["brass-compression"])
@@ -1714,17 +1758,18 @@ function updateBOM(){
   $("mtot").textContent=Math.round(total);
 }
 function bomText(pipes,fits,joints,total){
+  const have=k=>owned.has(k)?"  [ALREADY HAVE - not counted]":"";
   let t="PIPE PLAY — SHOPPING LIST\n==========================\n\nPIPES\n";
   for(const k in pipes){const [sys,sz]=k.split("|"),S=SYS[sys],m=Math.round(pipes[k]*10)/10;
     let buy;S.perM?buy=`buy ${Math.ceil(m)} m`:buy=`buy ${Math.ceil(m/S.unitLen)} x ${S.unitName}`;
-    t+=`- ${S.label} ${S.szl(sz)}: ${m} m needed -> ${buy}\n  (${S.pipeStore(sz)})\n`;}
+    t+=`- ${S.label} ${S.szl(sz)}: ${m} m needed -> ${buy}${have("p:"+k)}\n  (${S.pipeStore(sz)})\n`;}
   t+="\nFITTINGS\n";
-  for(const id in fits){const d=DEFBY[id];t+=`- ${fits[id]} x ${d.name}  [ask for: ${d.store}]\n`;}
+  for(const id in fits){const d=DEFBY[id];t+=`- ${fits[id]} x ${d.name}  [ask for: ${d.store}]${have("f:"+id)}\n`;}
   t+="\nCONSUMABLES\n";
-  if(joints["solvent"])t+="- 1 x PVC solvent cement (small tin)\n";
-  if(joints["thread"])t+=`- ${Math.ceil(joints["thread"]/8)} x PTFE thread seal tape\n`;
+  if(joints["solvent"])t+=`- 1 x PVC solvent cement (small tin)${have("c:cement")}\n`;
+  if(joints["thread"])t+=`- ${Math.ceil(joints["thread"]/8)} x PTFE thread seal tape${have("c:tape")}\n`;
   if(joints["fusion"])t+="- rent PPR welding iron (~RM20-40/day)\n";
-  t+=`\nESTIMATED TOTAL: RM ${total.toFixed(2)} (prices vary by store)\n`;
+  t+=`\nESTIMATED TOTAL TO BUY: RM ${total.toFixed(2)} (prices vary by store; already-have items excluded)\n`;
   return t;
 }
 
@@ -1782,7 +1827,7 @@ $("undo").addEventListener("click",()=>{
 });
 $("clear").addEventListener("click",async()=>{
   if((root||floats.length)&&!(await confirmUI("Clear the whole assembly? (Undo can bring it back)")))return;
-  pushUndo();root=null;floats=[];selPort=null;selNode=null;snapTarget=null;refresh();fitView();
+  pushUndo();root=null;floats=[];owned=new Set();selPort=null;selNode=null;snapTarget=null;refresh();fitView();
 });
 /* ---- account: your own free Supabase project, or offline guest mode ----
    The page talks to Supabase's REST API directly (auth + PostgREST) — no SDK.
@@ -1998,7 +2043,7 @@ function renderSlots(){
     bSave.addEventListener("click",async()=>{
       if(!root){toast("Nothing to save yet — build something first");return;}
       if(s&&!(await confirmUI(`Overwrite File ${i}?`)))return;
-      const payload={t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),ts:Date.now(),parts:countParts(),total:window._bomTotal??null};
+      const payload={t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),owned:[...owned],ts:Date.now(),parts:countParts(),total:window._bomTotal??null};
       if(SB.sess){
         try{await saveCloudSlot(i,payload);toast(`Saved to File ${i} in your account`);}
         catch(e){
@@ -2019,6 +2064,7 @@ function renderSlots(){
       if(!cur){toast(`File ${i} is empty`);return;}
       pushUndo();root=build(cur.t);
       floats=(cur.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
+      owned=new Set(cur.owned||[]);
       selPort=null;selNode=null;snapTarget=null;refresh();fitView();
       closeFiles();toast(`Loaded File ${i} — Undo brings your previous design back`);
     });
@@ -2045,6 +2091,7 @@ function renderSlots(){
     if(root||floats.length){
       payload.t=serialize(root);
       payload.f=floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir}));
+      payload.owned=[...owned];
     }
     const slots={};let ns=0;
     for(let i=1;i<=NSLOTS;i++){const sv=readSlot(i);if(sv){slots[i]=sv;ns++;}}
@@ -2079,6 +2126,7 @@ function importModal(){
       if(o.t){
         pushUndo();root=build(o.t);
         floats=(o.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
+        owned=new Set(o.owned||[]);
         selPort=null;selNode=null;snapTarget=null;refresh();fitView();
         done.push("design loaded onto the canvas");
       }
@@ -2119,6 +2167,14 @@ document.addEventListener("click",e=>{
   if(!$("filespop").hidden&&!e.target.closest(".filewrap"))closeFiles();
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeFiles();});
+$("bom").addEventListener("change",e=>{
+  const cb=e.target.closest("input.own");
+  if(!cb)return;
+  pushUndo();
+  const k=cb.dataset.k;
+  if(owned.has(k))owned.delete(k);else owned.add(k);
+  updateBOM();persistCanvas();
+});
 $("copy").addEventListener("click",async()=>{
   if(!window._bomText){toast("Nothing to copy yet");return;}
   try{await navigator.clipboard.writeText(window._bomText);toast("Shopping list copied — paste it anywhere");}
@@ -2153,7 +2209,7 @@ const EXAMPLES={
 $("examples").addEventListener("change",e=>{
   const v=e.target.value;e.target.value="";
   if(!v)return;
-  pushUndo();root=build(JSON.parse(JSON.stringify(EXAMPLES[v])));floats=[];selPort=null;selNode=null;snapTarget=null;
+  pushUndo();root=build(JSON.parse(JSON.stringify(EXAMPLES[v])));floats=[];owned=new Set();selPort=null;selNode=null;snapTarget=null;
   refresh();fitView();
   toast("Example loaded — orbit around it, then click any orange ball to keep building");
 });
