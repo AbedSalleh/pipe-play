@@ -47,6 +47,47 @@ Open `index.html` in any browser. No build step, no dependencies, works offline.
 Prices are rough Peninsular Malaysia estimates and vary by store — treat the
 total as a budgeting guide, not a quote.
 
+## Sign in & cloud saves (your own free Supabase project)
+
+The app can save designs to an account so they follow you across devices.
+It talks to a Supabase project **you own** (free tier is plenty — designs are
+~1 KB each). One-time setup, about 5 minutes:
+
+1. Go to [supabase.com](https://supabase.com), create a free account, and
+   create a **New project** (any name/region; set a strong database password
+   and keep it to yourself — the app never needs it).
+2. In the project: **SQL Editor → New query**, paste and run:
+
+   ```sql
+   create table designs (
+     user_id uuid not null default auth.uid(),
+     slot int not null,
+     data jsonb not null,
+     updated_at timestamptz not null default now(),
+     primary key (user_id, slot)
+   );
+   alter table designs enable row level security;
+   create policy "own rows" on designs
+     for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+   ```
+
+3. Optional but recommended for simplicity: **Authentication → Sign In /
+   Providers → Email → turn OFF "Confirm email"** (otherwise each new account
+   must click an email link before first sign-in).
+4. Find your keys under **Settings → API**: copy the **Project URL** and the
+   **publishable / anon public key**. (This key is designed to be public —
+   the data is protected by the row-level-security policy above, which lets
+   each signed-in user touch only their own rows.)
+5. Open the app (the GitHub Pages copy — see below), and paste both values
+   into the connect screen. Then **Create account** with an email + password.
+
+Designs saved in the browser before signing in are offered for upload into
+the account on first sign-in. "Continue offline" keeps everything
+browser-local, exactly as before.
+
+Note: the claude.ai artifact preview blocks all outside servers, so sign-in
+only works on the GitHub Pages copy (or the file opened directly).
+
 ## Live page (GitHub Pages)
 
 A workflow (`.github/workflows/pages.yml`) deploys the app to GitHub Pages on

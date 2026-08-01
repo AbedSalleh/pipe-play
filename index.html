@@ -120,13 +120,7 @@
   .loginbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;max-width:380px;width:calc(100% - 40px);box-shadow:0 10px 40px rgba(0,0,0,.15)}
   .loginbox h2{margin:2px 0 4px;font-size:20px}
   .loginbox .store{margin-bottom:14px}
-  .profrow{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:pointer;background:var(--panel)}
-  .profrow:hover{border-color:var(--accent)}
-  .profrow .pmeta{flex:1;min-width:0}
-  .profrow .pname{font-weight:600;font-size:13.5px}
-  .profrow .psub{font-size:11px;color:var(--mut)}
-  .avatar{width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700}
-  input#newname{flex:1;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--panel);color:var(--ink);min-width:0}
+  .loginbox input{width:100%;border:1px solid var(--line);border-radius:6px;padding:7px 9px;background:var(--panel);color:var(--ink);margin-bottom:8px}
   #userchip{font-size:12px;color:var(--mut);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .modalback{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:50}
   .modal{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;max-width:360px;width:calc(100% - 40px);box-shadow:0 10px 40px rgba(0,0,0,.3)}
@@ -197,16 +191,24 @@
   <div class="loginbox">
     <div style="font-size:26px">🔧</div>
     <h2>Pipe Play</h2>
-    <p class="store">Who's planning today? Profiles keep each person's save files separate <b>on this device</b> — they are not password-protected online accounts.</p>
-    <div id="proflist"></div>
-    <div class="row" style="display:flex;gap:8px;margin:10px 0 6px">
-      <input id="newname" maxlength="20" placeholder="New profile name" aria-label="New profile name">
-      <button class="btn primary" id="mkprofile">Create</button>
+    <div id="sbsetup" hidden>
+      <p class="store">One-time setup: connect your own <b>free Supabase project</b> — it stores your account and designs. The README has the 5-minute guide.</p>
+      <input id="sburl" placeholder="Project URL (https://xxxx.supabase.co)" aria-label="Supabase project URL">
+      <input id="sbkey" placeholder="Publishable / anon public key" aria-label="Supabase anon key">
+      <button class="btn primary" id="sbsave" style="width:100%;margin-bottom:12px">Connect</button>
     </div>
-    <input id="newpw" type="password" maxlength="64" placeholder="Password (optional)" aria-label="Password (optional)"
-      style="width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--panel);color:var(--ink);margin-bottom:6px">
-    <p class="psub" style="font-size:11px;color:var(--mut);margin:0 0 10px">A password stops others <b>on this device</b> from opening your profile. It's stored only as a salted hash in this browser and can't be recovered — your designs themselves stay as plain text.</p>
-    <button class="btn" id="guest" style="width:100%">Continue as guest</button>
+    <div id="sbauth" hidden>
+      <p class="store">Sign in — your designs save to your account and follow you to any device.</p>
+      <input id="email" type="email" autocomplete="username" placeholder="Email" aria-label="Email">
+      <input id="pw" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password">
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <button class="btn primary" id="signin" style="flex:1">Sign in</button>
+        <button class="btn" id="signup" style="flex:1">Create account</button>
+      </div>
+      <p id="authmsg" style="font-size:11.5px;color:var(--warn);margin:0 0 6px;min-height:14px"></p>
+      <p style="font-size:11px;color:var(--mut);margin:0 0 10px"><a href="#" id="sbchange" style="color:var(--mut)">Change Supabase connection</a></p>
+    </div>
+    <button class="btn" id="guest" style="width:100%">Continue offline — designs stay in this browser only</button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -1672,118 +1674,140 @@ $("clear").addEventListener("click",async()=>{
   if((root||floats.length)&&!(await confirmUI("Clear the whole assembly? (Undo can bring it back)")))return;
   pushUndo();root=null;floats=[];selPort=null;selNode=null;snapTarget=null;refresh();fitView();
 });
-/* ---- profiles: device-local "login" that namespaces the save files ---- */
-const PROFKEY="pipeplay-profiles", CURKEY="pipeplay-current";
-let currentUser=localStorage.getItem(CURKEY)||null; // "__guest" or a profile name; null = not chosen yet
-function profileList(){try{return JSON.parse(localStorage.getItem(PROFKEY))||[];}catch(e){return[];}}
-function saveProfileList(l){localStorage.setItem(PROFKEY,JSON.stringify(l));}
-function nsPrefix(){return (currentUser&&currentUser!=="__guest")?("pipeplay:"+currentUser+":"):"pipeplay-";}
-function avatarColor(name){let h=0;for(const ch of name)h=(h*31+ch.charCodeAt(0))%360;return `hsl(${h},45%,45%)`;}
-/* password hashing: PBKDF2-SHA256 with a random salt via WebCrypto.
-   Only the salted hash is stored (in this browser); the password itself never is. */
-const buf2hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
-const hex2buf=h=>new Uint8Array(h.match(/../g).map(x=>parseInt(x,16)));
-async function hashPw(pw,saltHex,it){
-  const salt=saltHex?hex2buf(saltHex):crypto.getRandomValues(new Uint8Array(16));
-  const iters=it||120000;
-  const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveBits"]);
-  const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt,iterations:iters,hash:"SHA-256"},key,256);
-  return {salt:buf2hex(salt),hash:buf2hex(bits),it:iters};
+/* ---- account: your own free Supabase project, or offline guest mode ----
+   The page talks to Supabase's REST API directly (auth + PostgREST) — no SDK.
+   The URL and publishable (anon) key are pasted by the owner at first run and
+   kept in this browser; they are designed to be public, security comes from
+   Row Level Security on the designs table (see README). */
+const SBCFGKEY="pipeplay-supabase", SBSESSKEY="pipeplay-session", MODEKEY="pipeplay-authmode";
+const SB={sess:null,cache:null};
+function sbCfg(){try{const c=JSON.parse(localStorage.getItem(SBCFGKEY));return (c&&c.url&&c.key)?c:null;}catch(e){return null;}}
+try{SB.sess=JSON.parse(localStorage.getItem(SBSESSKEY));}catch(e){}
+function setSess(s){if(s)localStorage.setItem(SBSESSKEY,JSON.stringify(s));else localStorage.removeItem(SBSESSKEY);SB.sess=s;}
+async function sbAuth(path,body){
+  const cfg=sbCfg();
+  const res=await fetch(cfg.url+"/auth/v1/"+path,{method:"POST",
+    headers:{apikey:cfg.key,"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const j=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(j.msg||j.error_description||j.message||("HTTP "+res.status));
+  return j;
 }
-function promptPwUI(msg){
-  return new Promise(res=>{
-    const back=document.createElement("div");back.className="modalback";
-    back.innerHTML=`<div class="modal"><p>${msg}</p>
-      <input type="password" autocomplete="off" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:7px 8px;background:var(--panel2);color:var(--ink);margin-bottom:10px">
-      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Sign in</button></div></div>`;
-    const inp=back.querySelector("input");
-    const done=v=>{back.remove();res(v);};
-    back.addEventListener("click",e=>{
-      e.stopPropagation();
-      if(e.target===back)return done(null);
-      const b=e.target.closest("button");
-      if(b)done(b.dataset.x==="1"?inp.value:null);
-    });
-    inp.addEventListener("keydown",e=>{if(e.key==="Enter")done(inp.value);if(e.key==="Escape")done(null);});
-    document.body.appendChild(back);inp.focus();
-  });
+async function sbRest(path,opts){
+  const cfg=sbCfg();opts=opts||{};
+  const res=await fetch(cfg.url+"/rest/v1/"+path,{method:opts.method||"GET",
+    headers:Object.assign({apikey:cfg.key,Authorization:"Bearer "+SB.sess.access_token,"Content-Type":"application/json"},opts.headers||{}),
+    body:opts.body!==undefined?JSON.stringify(opts.body):undefined});
+  if(!res.ok){const t=await res.text().catch(()=>"");throw new Error(t.slice(0,180)||("HTTP "+res.status));}
+  return res.status===204?null:res.json();
+}
+const sessFrom=j=>({access_token:j.access_token,refresh_token:j.refresh_token,
+  expires_at:Date.now()+((j.expires_in||3600)-90)*1000,email:(j.user&&j.user.email)||""});
+async function ensureFreshSession(){
+  if(!SB.sess||!sbCfg())return false;
+  if(Date.now()<SB.sess.expires_at)return true;
+  try{
+    const j=await sbAuth("token?grant_type=refresh_token",{refresh_token:SB.sess.refresh_token});
+    setSess(sessFrom(j));return true;
+  }catch(e){setSess(null);return false;}
+}
+async function loadCloudSlots(){
+  const rows=await sbRest("designs?select=slot,data&order=slot");
+  SB.cache={};for(const r of rows)SB.cache[r.slot]=r.data;
+}
+async function saveCloudSlot(i,data){
+  await sbRest("designs?on_conflict=user_id,slot",{method:"POST",
+    headers:{Prefer:"resolution=merge-duplicates"},body:[{slot:i,data}]});
+  if(!SB.cache)SB.cache={};
+  SB.cache[i]=data;
+}
+async function eraseCloudSlot(i){
+  await sbRest("designs?slot=eq."+i,{method:"DELETE"});
+  if(SB.cache)delete SB.cache[i];
+}
+function friendlyAuthError(e){
+  const m=(e&&e.message)||"";
+  if(e instanceof TypeError||/fetch|network|Failed/i.test(m))
+    return "Can't reach Supabase from this page. The claude.ai preview blocks outside servers — open your GitHub Pages copy, or continue offline.";
+  if(/invalid login credentials/i.test(m))return "Wrong email or password.";
+  if(/already registered/i.test(m))return "That email already has an account — use Sign in.";
+  if(/at least|password/i.test(m))return m;
+  return m||"Something went wrong — try again.";
 }
 function updateUserChip(){
-  $("userchip").textContent=currentUser&&currentUser!=="__guest"?("👤 "+currentUser):"👤 Guest";
+  $("userchip").textContent=SB.sess?("\ud83d\udc64 "+SB.sess.email):"\ud83d\udc64 Guest (this browser only)";
+  $("switchuser").textContent=SB.sess?"Sign out":"Sign in";
 }
-function loginAs(name){
-  currentUser=name;localStorage.setItem(CURKEY,name);
-  $("login").hidden=true;updateUserChip();
-  toast(name==="__guest"?"Continuing as guest":"Signed in as "+name);
+function showLogin(){
+  const cfg=sbCfg();
+  $("sbsetup").hidden=!!cfg;
+  $("sbauth").hidden=!cfg;
+  $("authmsg").textContent="";
+  $("login").hidden=false;
 }
-function legacySlotsInUse(){
-  for(let i=1;i<=3;i++)if(localStorage.getItem("pipeplay-slot-"+i))return true;
-  return false;
-}
-function renderLogin(){
-  const el=$("proflist");el.innerHTML="";
-  for(const p of profileList()){
-    const row=document.createElement("div");row.className="profrow";row.tabIndex=0;row.setAttribute("role","button");
-    const slots=[1,2,3].filter(i=>localStorage.getItem("pipeplay:"+p.name+":slot-"+i)).length;
-    row.innerHTML=`<span class="avatar" style="background:${avatarColor(p.name)}">${p.name.slice(0,2).toUpperCase()}</span>
-      <div class="pmeta"><div class="pname">${p.name}${p.sec?" 🔒":""}</div><div class="psub">${slots} of 3 save files used</div></div>`;
-    const del=document.createElement("button");del.className="mini";del.textContent="✕";del.title="Delete profile";
-    del.addEventListener("click",async ev=>{
-      ev.stopPropagation();
-      if(!(await confirmUI(`Delete profile "${p.name}" and its save files? This cannot be undone.`)))return;
-      saveProfileList(profileList().filter(x=>x.name!==p.name));
-      for(let i=1;i<=3;i++)localStorage.removeItem("pipeplay:"+p.name+":slot-"+i);
-      renderLogin();
-    });
-    row.appendChild(del);
-    const tryLogin=async()=>{
-      if(p.sec){
-        const pw=await promptPwUI(`Password for "${p.name}":`);
-        if(pw==null)return;
-        try{
-          const t=await hashPw(pw,p.sec.salt,p.sec.it);
-          if(t.hash!==p.sec.hash){toast("Wrong password");return;}
-        }catch(e){toast("This browser can't verify passwords here (needs a secure page)");return;}
+const authMsg=t=>{$("authmsg").textContent=t;};
+async function finishLogin(){
+  $("login").hidden=true;localStorage.setItem(MODEKEY,"cloud");
+  updateUserChip();
+  try{
+    await loadCloudSlots();
+    // bring designs saved in this browser into the account (once, if account is empty)
+    const cloudEmpty=!Object.keys(SB.cache).length;
+    const localAny=[1,2,3].some(i=>localStorage.getItem("pipeplay-slot-"+i));
+    if(cloudEmpty&&localAny&&(await confirmUI("This browser has designs saved from before you signed in. Upload them into your account?"))){
+      for(let i=1;i<=3;i++){
+        const v=localStorage.getItem("pipeplay-slot-"+i);
+        if(v)try{await saveCloudSlot(i,JSON.parse(v));}catch(e){}
       }
-      loginAs(p.name);
-    };
-    row.addEventListener("click",tryLogin);
-    row.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();tryLogin();}});
-    el.appendChild(row);
-  }
-}
-function showLogin(){renderLogin();$("login").hidden=false;}
-$("guest").addEventListener("click",()=>loginAs("__guest"));
-$("mkprofile").addEventListener("click",async()=>{
-  const name=($("newname").value||"").trim();
-  if(!/^[\w\- ]{1,20}$/.test(name)||name==="__guest"){toast("Give the profile a simple name (letters, numbers, spaces)");return;}
-  if(profileList().some(p=>p.name.toLowerCase()===name.toLowerCase())){toast("That profile already exists — click it to sign in");return;}
-  const prof={name,created:Date.now()};
-  const pw=$("newpw").value;
-  if(pw){
-    if(!(window.crypto&&crypto.subtle)){toast("Passwords need a secure (https) page — profile not created");return;}
-    prof.sec=await hashPw(pw);
-    $("newpw").value="";
-  }
-  saveProfileList(profileList().concat([prof]));
-  // bring the designs already saved in this browser (guest slots) into the new profile
-  if(legacySlotsInUse()&&(await confirmUI(`This browser already has saved designs (guest files). Copy them into "${name}"?`))){
-    for(let i=1;i<=3;i++){
-      const v=localStorage.getItem("pipeplay-slot-"+i);
-      if(v)localStorage.setItem("pipeplay:"+name+":slot-"+i,v);
+      toast("Designs uploaded to your account");
     }
-    toast("Copied your saved designs into "+name);
-  }
-  $("newname").value="";
-  loginAs(name);
+  }catch(e){SB.cache=SB.cache||{};toast("Signed in, but couldn't load save files: "+friendlyAuthError(e));}
+}
+$("sbsave").addEventListener("click",()=>{
+  const url=($("sburl").value||"").trim().replace(/\/+$/,"");
+  const key=($("sbkey").value||"").trim();
+  if(!/^https:\/\/.+/.test(url)||!key){toast("Paste your project URL (https://…) and its publishable/anon key");return;}
+  localStorage.setItem(SBCFGKEY,JSON.stringify({url,key}));
+  showLogin();
 });
-$("newname").addEventListener("keydown",e=>{if(e.key==="Enter")$("mkprofile").click();});
+$("sbchange").addEventListener("click",e=>{
+  e.preventDefault();
+  setSess(null);localStorage.removeItem(SBCFGKEY);showLogin();
+});
+$("signin").addEventListener("click",async()=>{
+  const email=($("email").value||"").trim(),pw=$("pw").value;
+  if(!email||!pw){authMsg("Enter your email and password.");return;}
+  authMsg("Signing in\u2026");
+  try{
+    const j=await sbAuth("token?grant_type=password",{email,password:pw});
+    setSess(sessFrom(j));$("pw").value="";
+    await finishLogin();
+    toast("Signed in as "+email);
+  }catch(e){authMsg(friendlyAuthError(e));}
+});
+$("signup").addEventListener("click",async()=>{
+  const email=($("email").value||"").trim(),pw=$("pw").value;
+  if(!email||!pw){authMsg("Enter an email and choose a password.");return;}
+  authMsg("Creating account\u2026");
+  try{
+    const j=await sbAuth("signup",{email,password:pw});
+    if(j.access_token){setSess(sessFrom(j));$("pw").value="";await finishLogin();toast("Account created — signed in");}
+    else authMsg("Account created — check your email for the confirmation link, then Sign in.");
+  }catch(e){authMsg(friendlyAuthError(e));}
+});
+$("pw").addEventListener("keydown",e=>{if(e.key==="Enter")$("signin").click();});
+$("guest").addEventListener("click",()=>{
+  localStorage.setItem(MODEKEY,"guest");
+  $("login").hidden=true;updateUserChip();
+  toast("Offline mode — designs save to this browser only");
+});
 $("switchuser").addEventListener("click",()=>{
-  localStorage.removeItem(CURKEY);currentUser=null;showLogin();
+  if(SB.sess){setSess(null);SB.cache=null;}
+  localStorage.removeItem(MODEKEY);
+  updateUserChip();showLogin();
 });
 
-/* ---- save files (three slots per profile, like emulator save states) ---- */
-const NSLOTS=3, slotKey=i=>nsPrefix()+"slot-"+i;
+/* ---- save files (three slots: account when signed in, this browser otherwise) ---- */
+const NSLOTS=3, slotKey=i=>"pipeplay-slot-"+i;
 (function migrateOldSave(){ // pre-slot versions stored one design under pipeplay-save
   try{
     const old=localStorage.getItem("pipeplay-save");
@@ -1794,6 +1818,7 @@ const NSLOTS=3, slotKey=i=>nsPrefix()+"slot-"+i;
   }catch(e){}
 })();
 function readSlot(i){
+  if(SB.sess)return (SB.cache&&SB.cache[i])||null;
   try{const s=localStorage.getItem(slotKey(i));return s?JSON.parse(s):null;}catch(e){return null;}
 }
 function countParts(){
@@ -1814,8 +1839,15 @@ function renderSlots(){
     bSave.addEventListener("click",async()=>{
       if(!root){toast("Nothing to save yet — build something first");return;}
       if(s&&!(await confirmUI(`Overwrite File ${i}?`)))return;
-      localStorage.setItem(slotKey(i),JSON.stringify({t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),ts:Date.now(),parts:countParts(),total:window._bomTotal??null}));
-      toast(`Saved to File ${i}`);renderSlots();
+      const payload={t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),ts:Date.now(),parts:countParts(),total:window._bomTotal??null};
+      if(SB.sess){
+        try{await saveCloudSlot(i,payload);toast(`Saved to File ${i} in your account`);}
+        catch(e){toast("Couldn't save to your account: "+friendlyAuthError(e));return;}
+      } else {
+        localStorage.setItem(slotKey(i),JSON.stringify(payload));
+        toast(`Saved to File ${i} (this browser)`);
+      }
+      renderSlots();
     });
     row.appendChild(bSave);
     const bLoad=document.createElement("button");bLoad.className="mini";bLoad.textContent="Load";
@@ -1832,7 +1864,11 @@ function renderSlots(){
     bDel.addEventListener("click",async()=>{
       if(!s)return;
       if(!(await confirmUI(`Erase File ${i}? This cannot be undone.`)))return;
-      localStorage.removeItem(slotKey(i));renderSlots();toast(`File ${i} erased`);
+      if(SB.sess){
+        try{await eraseCloudSlot(i);}
+        catch(e){toast("Couldn't erase: "+friendlyAuthError(e));return;}
+      } else localStorage.removeItem(slotKey(i));
+      renderSlots();toast(`File ${i} erased`);
     });
     row.appendChild(bDel);
     pop.appendChild(row);
@@ -1942,7 +1978,14 @@ if(!ENG){
   $("hint").textContent="WebGL is not available in this browser — the 3D canvas cannot start.";
 }
 updateUserChip();
-if(!currentUser)showLogin();
+(async()=>{ // restore the session, or show the login screen
+  if(SB.sess&&sbCfg()){
+    if(await ensureFreshSession()){
+      updateUserChip();
+      try{await loadCloudSlots();}catch(e){SB.cache={};}
+    } else showLogin();
+  } else if(localStorage.getItem(MODEKEY)!=="guest") showLogin();
+})();
 refresh();fitView();
 requestAnimationFrame(frame);
 </script>
