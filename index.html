@@ -278,7 +278,8 @@ const SYS = {
          szl:s=>s+" mm", perUnit:{"20":12,"25":17,"32":26}, unitLen:4, unitName:"length (4 m)",
          thread:{"20":"12","25":"34","32":"1"},
          pipeStore:s=>"Paip PPR "+s+"mm PN16 hijau (4 m)"},
-  brass:{label:"Brass / tap", color:"#B08A3E", fit:"#B08A3E", sizes:[]}
+  brass:{label:"Brass / tap", color:"#B08A3E", fit:"#B08A3E", sizes:[]},
+  dev:  {label:"Water devices", color:"#5A6068", fit:"#23272C", sizes:[]}
 };
 
 const sock=(sz)=>({t:"sock",sz}), thm=(sz)=>({t:"thm",sz}), thf=(sz)=>({t:"thf",sz});
@@ -334,7 +335,7 @@ const METHODS = {
 };
 
 const DEFS=[];
-function def(id,sys,name,store,price,ports,geo,note){DEFS.push({id,sys,name,store,price,ports,geo,note});}
+function def(id,sys,name,store,price,ports,geo,note,len){DEFS.push({id,sys,name,store,price,ports,geo,note,len});}
 const T3=["12","34","1"];
 for(const s of T3){const L=SZL[s];
   def("pvc-sock-"+s,"pvc","PVC socket "+L,"Soket PVC "+L,{ "12":1,"34":1.5,"1":2.5}[s],[sock(s),sock(s)],"inline");
@@ -387,6 +388,7 @@ for(const s of SYS.ppr.sizes){const t=SYS.ppr.thread[s];
   if(s!=="32")def("ppr-valve-"+s,"ppr","PPR ball valve "+s+"mm","Ball valve PPR "+s+"mm",{ "20":15,"25":19}[s],[fus(s),fus(s)],"inline","Shut-off point on PPR lines — fusion-welded both sides.");
 }
 def("flex-12","brass","Flexible hose connector ½″ × 30 cm","Hos fleksibel ½″ (stainless braided)",8,[thf("12"),thf("12")],"inline","Braided flexi hose with swivel nuts both ends — joins two male threads even when they don't line up perfectly.");
+def("wf-out-1","dev","Outdoor master filter 1250 × 200 mm (FRP)","Outdoor master filter FRP, port 1″ female (in one side, out the other)",350,[thf("1"),thf("1")],"inline","Whole-house sediment filter — stands on the ground with its head ports about 1.25 m up. Run your line at head height; inlet one side, outlet the other.",0.26);
 def("tap-bib","brass","Bib tap ½″ (garden/wall tap)","Pili bib tap ½″",12,[thm("12")],"end","Standard Malaysian wall tap. Its male thread screws into any ½″ female port.");
 def("tap-ball","brass","Ball bib tap ½″ (quarter-turn)","Pili ball bib ½″ stainless",22,[thm("12")],"end","Smoother quarter-turn tap; same ½″ male inlet.");
 const DEFBY = Object.fromEntries(DEFS.map(d=>[d.id,d]));
@@ -613,7 +615,7 @@ function layout(n,p0,dIn,out){
   } else {
     const d=DEFBY[n.data];
     if(d.geo==="inline"||d.geo==="end"){
-      const len=d.geo==="end"?END_LEN:FIT_LEN;
+      const len=d.geo==="end"?END_LEN:(d.len||FIT_LEN);
       const p1=pos(p0,dIn,len);
       out.shapes.push({t:d.geo==="end"?"endfit":"inline",n,a:p0,b:p1,d:dIn,def:d});
       if(d.geo==="inline"){ const other=d.ports.map((sp,i)=>i).find(i=>i!==n.via); exits=[{key:other,spec:d.ports[other],pos:p1,dir:dIn}]; }
@@ -815,6 +817,17 @@ function meshForShape(arr,s,pick){
     }
     else sphere(arr,s.b,r*0.95,col,pick);
     const mid=V.scl(V.add(s.a,s.b),0.5);
+    if(d.id.startsWith("wf-")){
+      const ax2=V.norm(V.sub(s.b,s.a));
+      const mid=V.scl(V.add(s.a,s.b),0.5);
+      const frp=hex2rgb("#6B7178"),blk=hex2rgb("#1E2226");
+      cylinder(arr,[mid[0],mid[1],mid[2]-0.04],[mid[0],mid[1],mid[2]-1.19],0.1,20,frp,pick,true);      // tank body
+      cylinder(arr,[mid[0],mid[1],mid[2]-1.13],[mid[0],mid[1],mid[2]-1.25],0.105,20,blk,pick,true);    // base cap
+      cylinder(arr,[mid[0],mid[1],mid[2]-0.02],[mid[0],mid[1],mid[2]+0.10],0.06,14,blk,pick,true);     // head
+      const hTop=[mid[0],mid[1],mid[2]+0.10];
+      cylinder(arr,hTop,[hTop[0],hTop[1],hTop[2]+0.05],0.018,10,blk,pick,true);                        // valve stem
+      cylinder(arr,V.sub([hTop[0],hTop[1],hTop[2]+0.05],V.scl(ax2,0.055)),V.add([hTop[0],hTop[1],hTop[2]+0.05],V.scl(ax2,0.055)),0.014,8,blk,pick,true); // handle
+    }
     if(d.id.startsWith("tap")){
       const top=V.add(s.b,[0,0,.075]);
       cylinder(arr,s.b,top,.016,10,GOLD,pick,true);                       // riser body
@@ -1404,7 +1417,7 @@ function defThumb(d){
     if(d.geo==="elbow") meshForShape(arr,{t:"elbow",def:d,a:[-.11,0,0],c:[0,0,0],b:[0,.11,0],d:0},NOPICK);
     else if(d.geo==="corner") meshForShape(arr,{t:"corner",def:d,a:[-.11,0,0],c:[0,0,0],b:[0,.11,0],bp:[0,0,.11],d:0},NOPICK);
     else if(d.geo==="tee") meshForShape(arr,{t:"tee",def:d,a:[-.13,0,0],b:[.13,0,0],m:[0,0,0],bp:[0,.13,0],d:0},NOPICK);
-    else meshForShape(arr,{t:d.geo==="end"?"endfit":"inline",def:d,a:[0,0,0],b:[d.geo==="end"?END_LEN:FIT_LEN,0,0],d:0},NOPICK);
+    else meshForShape(arr,{t:d.geo==="end"?"endfit":"inline",def:d,a:[0,0,0],b:[d.geo==="end"?END_LEN:(d.len||FIT_LEN),0,0],d:0},NOPICK);
   });
 }
 
@@ -1445,6 +1458,13 @@ function legend(el){
 function renderPanels(){
   const el=$("attach"), lt=$("lefttitle");
   el.innerHTML="";
+  if(loopFrom){ // loop mode stays visible (and cancellable) whatever is selected
+    el.insertAdjacentHTML("beforeend",`<div class="grouph">Close a loop — in progress</div>
+      <p class="note">Click the <b>other orange ball</b> in 3D. It must face the chosen opening straight on — a pipe of the exact gap length will join both ends.</p>`);
+    const cb=document.createElement("button");cb.className="btn";cb.style.marginBottom="12px";cb.textContent="Cancel loop mode";
+    cb.addEventListener("click",()=>{loopFrom=null;$("hint").innerHTML=HINT_DEFAULT;renderPanels();});
+    el.appendChild(cb);
+  }
   if(!root){
     lt.textContent="Start";
     el.insertAdjacentHTML("beforeend",`<p class="ctx">Where does your water come from? Pick a starting point — then keep clicking the <b>orange balls</b> in 3D to snap parts on.</p>`);
@@ -1644,23 +1664,16 @@ function renderPanels(){
   const ctxSys=sysOfSpec(spec);
   el.insertAdjacentHTML("beforeend",`<p class="ctx">Open connection: <b>${specLabel(spec)}</b>.<br>What do you want to combine this with?</p>
     <p class="note" style="margin:-4px 0 10px">The <b>orange arrow</b> shows which way new parts grow. Pipes only go straight — to turn the run sideways or up/down, add an <b>elbow</b>; to point the whole line elsewhere, click the wall/start and change its facing.</p>`);
-  if(lastPorts.length>1||loopFrom){
+  if(lastPorts.length>1&&!loopFrom){
     el.insertAdjacentHTML("beforeend",`<div class="grouph">Close a loop</div>`);
-    if(!loopFrom){
-      const lb=document.createElement("button");lb.className="btn";lb.style.marginBottom="10px";
-      lb.textContent="🔗 Connect this opening to another one";
-      lb.addEventListener("click",()=>{
-        loopFrom={node:selPort.node,key:selPort.key,spec:selPort.spec,pos:selPort.pos,dir:selPort.dir};
-        $("hint").innerHTML="Click the <b>other orange ball</b> to close the loop — press Esc to cancel";
-        renderPanels();
-      });
-      el.appendChild(lb);
-    } else {
-      el.insertAdjacentHTML("beforeend",`<p class="note">Now click the <b>other orange ball</b> in 3D. It must face this opening straight on — a pipe of the exact gap length is fitted and <b>both ends are joined</b>.</p>`);
-      const cb=document.createElement("button");cb.className="btn";cb.style.marginBottom="10px";cb.textContent="Cancel loop mode";
-      cb.addEventListener("click",()=>{loopFrom=null;$("hint").innerHTML=HINT_DEFAULT;renderPanels();});
-      el.appendChild(cb);
-    }
+    const lb=document.createElement("button");lb.className="btn";lb.style.marginBottom="10px";
+    lb.textContent="🔗 Connect this opening to another one";
+    lb.addEventListener("click",()=>{
+      loopFrom={node:selPort.node,key:selPort.key,spec:selPort.spec,pos:selPort.pos,dir:selPort.dir};
+      $("hint").innerHTML="Click the <b>other orange ball</b> to close the loop — press Esc to cancel";
+      renderPanels();
+    });
+    el.appendChild(lb);
   }
 
   /* --- everything combinable: chains found from this connection --- */
@@ -1752,13 +1765,14 @@ function renderPanels(){
   /* categories: parts grouped by what they DO, then by material, then by size */
   const catOf=d=>{
     if(d.geo==="end")return "finish";
+    if(d.sys==="dev")return "devices";
     if(d.id.includes("valve"))return "valves";
     if(d.geo==="elbow"||d.geo==="corner")return "elbows";
     if(d.geo==="tee")return "tees";
     if(isTransition(d))return "adapters";
     return "couplers";
   };
-  const cats={couplers:[],elbows:[],tees:[],valves:[],adapters:[],finish:[]};
+  const cats={couplers:[],elbows:[],tees:[],valves:[],devices:[],adapters:[],finish:[]};
   for(const f of fitChains)cats[catOf(f.def)].push(f);
   const sysOrder=Object.keys(SYS).sort((a,b)=>((a===ctxSys?0:1)-(b===ctxSys?0:1)));
   const sizeIdx=d=>{const i=(SYS[d.sys].sizes||[]).indexOf(d.ports[0].sz);return i<0?99:i;};
@@ -1796,6 +1810,7 @@ function renderPanels(){
   catSection("elbows","Elbows — turn the line",cats.elbows,makeFitCard);
   catSection("tees","Tees — branch the line",cats.tees,makeFitCard);
   catSection("valves","Valves — shut-off points",cats.valves,makeFitCard);
+  catSection("devices","Water devices — filters & treatment",cats.devices,makeFitCard);
   catSection("adapters","Adapters & reducers — change size or material",cats.adapters,makeFitCard);
   catSection("finish","Taps, caps & plugs — finish the line",cats.finish,makeFitCard);
   if(!pipeOptions.length&&!fitChains.length)
