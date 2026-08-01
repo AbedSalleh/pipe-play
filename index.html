@@ -452,6 +452,7 @@ function bestChainTo(reach,goal){ // goal(spec) -> info object or null
 let root=null, nid=0, selPort=null, selNode=null, undoStack=[];
 let floats=[]; // detached islands: {node, pos, dir} — pos is where the island's entry connector sits
 let owned=new Set(); // shopping-list items marked "already have" — excluded from the total
+let loops=[],loopFrom=null; // closed loops: a loop-pipe's far end joined onto another open port
 let snapTarget=null; // open port a dragged island would snap to on release
 const openCats=new Set(["pipes"]); // which attach-panel categories stay expanded
 const $=id=>document.getElementById(id);
@@ -508,14 +509,45 @@ function removeSingle(n){ // remove only n; what followed floats free
   else floats.splice(floats.indexOf(isl),1);
   selNode=null; selPort=null;
 }
-function snapshot(){return JSON.stringify({t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),o:[...owned]});}
+function snapshot(){return JSON.stringify({t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),o:[...owned],l:loops});}
 function restore(s){
   const o=JSON.parse(s);
   root=build(o.t);
   floats=(o.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
   owned=new Set(o.o||[]);
+  loops=o.l||[];loopFrom=null;
 }
 function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length>60) undoStack.shift(); }
+function pathOf(n){const p=[];let t=n;while(t.parent){p.push(t.parentPort);t=t.parent;}return p.reverse();}
+function resolvePath(p){let n=root;for(const k of p){if(!n)return null;n=n.children[k];}return n||null;}
+function attemptLoop(A,B){
+  if(A.node===B.node&&A.key===B.key){toast("That's the same opening — click the other one");return false;}
+  if(islandOf(A.node)||islandOf(B.node)){toast("Snap the floating piece into the line first, then close the loop");return false;}
+  if(B.dir!==OPP(A.dir)){toast("The two openings don't face each other — rotate an elbow/tee so they point straight at each other");return false;}
+  const v=V.sub(B.pos,A.pos),L=V.dot(v,DIRV[A.dir]);
+  const off=V.len(V.sub(v,V.scl(DIRV[A.dir],L)));
+  if(L<0.02){toast("The openings overlap or point away — make the run longer so a pipe fits between them");return false;}
+  if(off>0.011){toast("They face each other but are offset sideways by "+(Math.round(off*1000)/10)+" cm — adjust a pipe length upstream so they line up");return false;}
+  let pick=null;
+  for(const sys in SYS){
+    for(const sz of SYS[sys].sizes||[]){
+      const pe=pipeEndSpec(sys,sz);
+      if(match(A.spec,pe)&&match(B.spec,pe)){pick={sys,sz};break;}
+    }
+    if(pick)break;
+  }
+  if(!pick){toast("No single pipe fits both openings ("+specLabel(A.spec)+" vs "+specLabel(B.spec)+") — bring them to the same type first");return false;}
+  pushUndo();
+  const Lr=Math.round(L*1000)/1000;
+  const pn=mkNode("pipe",{sys:pick.sys,sz:pick.sz},{L:Lr,exact:1});
+  attach(A.node,A.key,pn);
+  loops.push({p:pathOf(pn),bp:pathOf(B.node),bk:B.key,m:methodOf(B.spec,pipeEndSpec(pick.sys,pick.sz))});
+  loopFrom=null;selPort=null;selNode=null;
+  $("hint").innerHTML=HINT_DEFAULT;
+  refresh();
+  toast("Loop closed — a "+Lr+" m "+SYS[pick.sys].label.split(" ")[0]+" pipe now joins both ends");
+  return true;
+}
 function persistCanvas(){ // the working canvas survives page reloads
   try{localStorage.setItem("pipeplay-canvas",snapshot());}catch(e){}
 }
@@ -573,7 +605,7 @@ function layout(n,p0,dIn,out){
     out.shapes.push({t:"start",n,p:p0,d:dIn});
     exits=[{key:0,spec:STARTS[n.data].port,pos:p0,dir:dIn}];
   } else if(n.kind==="pipe"){
-    const len=Math.max(.12,n.meta.L);
+    const len=n.meta.exact?Math.max(.02,n.meta.L):Math.max(.12,n.meta.L);
     const p1=pos(p0,dIn,len);
     out.shapes.push({t:"pipe",n,a:p0,b:p1,d:dIn});
     out.labels.push({a:p0,b:p1,txt:n.meta.L+" m"+(dIn===4?" ↑":dIn===5?" ↓":"")});
@@ -979,6 +1011,17 @@ function rebuildScene(){
       if(id==null){id=pickTable.length;pickTable.push({type:"node",node:s.n});nodePick.set(s.n,id);}
       meshForShape(arr,s,encPick(id));
     }
+    // loop closures: drop broken ones, hide joined openings
+    loops=loops.filter(lp=>{
+      const pn=resolvePath(lp.p),bn=resolvePath(lp.bp);
+      if(!pn||!bn||pn.kind!=="pipe"||bn.children[lp.bk])return false;
+      const ex=(pn._exits||[])[0],bex=(bn._exits||[]).find(e=>e.key===lp.bk);
+      if(!ex||!bex)return false;
+      return Math.hypot(ex.pos[0]-bex.pos[0],ex.pos[1]-bex.pos[1],ex.pos[2]-bex.pos[2])<=0.011;
+    });
+    const joined=[];
+    for(const lp of loops)joined.push([resolvePath(lp.p),0],[resolvePath(lp.bp),lp.bk]);
+    out.ports=out.ports.filter(p=>!joined.some(j=>j[0]===p.node&&j[1]===p.key));
     for(const p of out.ports){
       p.pickId=pickTable.length;pickTable.push({type:"port",port:p});
       lastPorts.push(p);
@@ -1263,7 +1306,10 @@ function endDrag(e){
     if(moved<5&&d.mode!=="pan"){
       const hit=d.hit;
       if(!hit){selPort=null;selNode=null;}
-      else if(hit.type==="port"){selPort=hit.port;selNode=null;}
+      else if(hit.type==="port"){
+        if(loopFrom){attemptLoop(loopFrom,hit.port);return;}
+        selPort=hit.port;selNode=null;
+      }
       else if(hit.type==="entry"){selNode=hit.fl.node;selPort=null;}
       else{selNode=hit.node;selPort=null;}
       renderPanels();
@@ -1428,11 +1474,11 @@ function renderPanels(){
       ${selNode.joint?`<div class="note">Joined by: <b>${METHODS[selNode.joint].name}</b></div>`:""}</div></div>`);
     if(selNode.kind==="pipe"){
       const row=document.createElement("div");row.className="row";row.style.marginBottom="8px";
-      row.innerHTML=`<label>Length <input class="len" id="editlen" type="number" min="0.1" max="30" step="0.1" value="${selNode.meta.L}"> m</label>`;
+      row.innerHTML=`<label>Length <input class="len" id="editlen" type="number" min="0.1" max="30" step="0.01" value="${selNode.meta.L}"> m</label>`;
       const b=document.createElement("button");b.className="mini add";b.textContent="Set";
       b.addEventListener("click",()=>{
         const L=Math.max(.1,Math.min(30,parseFloat($("editlen").value)||selNode.meta.L));
-        pushUndo();selNode.meta.L=Math.round(L*10)/10;refresh();
+        pushUndo();selNode.meta.L=Math.round(L*100)/100;refresh();
       });
       row.appendChild(b);el.appendChild(row);
     }
@@ -1598,6 +1644,24 @@ function renderPanels(){
   const ctxSys=sysOfSpec(spec);
   el.insertAdjacentHTML("beforeend",`<p class="ctx">Open connection: <b>${specLabel(spec)}</b>.<br>What do you want to combine this with?</p>
     <p class="note" style="margin:-4px 0 10px">The <b>orange arrow</b> shows which way new parts grow. Pipes only go straight — to turn the run sideways or up/down, add an <b>elbow</b>; to point the whole line elsewhere, click the wall/start and change its facing.</p>`);
+  if(lastPorts.length>1||loopFrom){
+    el.insertAdjacentHTML("beforeend",`<div class="grouph">Close a loop</div>`);
+    if(!loopFrom){
+      const lb=document.createElement("button");lb.className="btn";lb.style.marginBottom="10px";
+      lb.textContent="🔗 Connect this opening to another one";
+      lb.addEventListener("click",()=>{
+        loopFrom={node:selPort.node,key:selPort.key,spec:selPort.spec,pos:selPort.pos,dir:selPort.dir};
+        $("hint").innerHTML="Click the <b>other orange ball</b> to close the loop — press Esc to cancel";
+        renderPanels();
+      });
+      el.appendChild(lb);
+    } else {
+      el.insertAdjacentHTML("beforeend",`<p class="note">Now click the <b>other orange ball</b> in 3D. It must face this opening straight on — a pipe of the exact gap length is fitted and <b>both ends are joined</b>.</p>`);
+      const cb=document.createElement("button");cb.className="btn";cb.style.marginBottom="10px";cb.textContent="Cancel loop mode";
+      cb.addEventListener("click",()=>{loopFrom=null;$("hint").innerHTML=HINT_DEFAULT;renderPanels();});
+      el.appendChild(cb);
+    }
+  }
 
   /* --- everything combinable: chains found from this connection --- */
   const reach=exploreChains(spec,4);
@@ -1625,14 +1689,14 @@ function renderPanels(){
       <div class="nm">${S.label} ${S.szl(p.sz)}</div>
       <div class="store">${S.pipeStore(p.sz)}</div>
       ${chainHTML(p.steps)}
-      <div class="row"><label>Length <input class="len" type="number" min="0.1" max="30" step="0.1" value="1.0"> m</label>
+      <div class="row"><label>Length <input class="len" type="number" min="0.1" max="30" step="0.01" value="1.0"> m</label>
       <span class="price">≈ RM ${pipePricePerM(p.sys,p.sz).toFixed(2)}/m</span>
       <button class="mini add">Combine</button></div></div>`;
     c.querySelector(".add").addEventListener("click",()=>{
       const L=Math.max(.1,Math.min(30,parseFloat(c.querySelector(".len").value)||1));
       pushUndo();
       const at=insertChain(p.steps);
-      const pnode=mkNode("pipe",{sys:p.sys,sz:p.sz},{L:Math.round(L*10)/10});
+      const pnode=mkNode("pipe",{sys:p.sys,sz:p.sz},{L:Math.round(L*100)/100});
       attach(at.node,at.key,pnode);
       advanceSelection(pnode);refresh();
     });
@@ -1749,6 +1813,7 @@ function collect(){
     for(const k in n.children)walk(n.children[k]);};
   walk(root);
   for(const fl of floats)walk(fl.node);
+  for(const lp of loops)if(lp.m)joints[lp.m]=(joints[lp.m]||0)+1;
   return {pipes,fits,joints};
 }
 function updateBOM(){
@@ -1768,7 +1833,7 @@ function updateBOM(){
   if(pk.length){
     rows+=`<tr><td colspan="2"><span class="eyebrow">Pipes</span></td></tr>`;
     for(const k of pk){
-      const [sys,sz]=k.split("|"),S=SYS[sys],m=Math.round(pipes[k]*10)/10;
+      const [sys,sz]=k.split("|"),S=SYS[sys],m=Math.round(pipes[k]*100)/100;
       let buy,cost;
       if(S.perM){const bm=Math.ceil(m);cost=bm*S.perM[sz];buy=`buy ${bm} m (sold per meter)`;}
       else {const n=Math.ceil(m/S.unitLen);cost=n*S.perUnit[sz];buy=`buy ${n} × ${S.unitName}`;}
@@ -1804,7 +1869,7 @@ function updateBOM(){
 function bomText(pipes,fits,joints,total){
   const have=k=>owned.has(k)?"  [ALREADY HAVE - not counted]":"";
   let t="PIPE PLAY — SHOPPING LIST\n==========================\n\nPIPES\n";
-  for(const k in pipes){const [sys,sz]=k.split("|"),S=SYS[sys],m=Math.round(pipes[k]*10)/10;
+  for(const k in pipes){const [sys,sz]=k.split("|"),S=SYS[sys],m=Math.round(pipes[k]*100)/100;
     let buy;S.perM?buy=`buy ${Math.ceil(m)} m`:buy=`buy ${Math.ceil(m/S.unitLen)} x ${S.unitName}`;
     t+=`- ${S.label} ${S.szl(sz)}: ${m} m needed -> ${buy}${have("p:"+k)}\n  (${S.pipeStore(sz)})\n`;}
   t+="\nFITTINGS\n";
@@ -1871,7 +1936,7 @@ $("undo").addEventListener("click",()=>{
 });
 $("clear").addEventListener("click",async()=>{
   if((root||floats.length)&&!(await confirmUI("Clear the whole assembly? (Undo can bring it back)")))return;
-  pushUndo();root=null;floats=[];owned=new Set();selPort=null;selNode=null;snapTarget=null;refresh();fitView();
+  pushUndo();root=null;floats=[];owned=new Set();loops=[];loopFrom=null;selPort=null;selNode=null;snapTarget=null;refresh();fitView();
 });
 /* ---- account: your own free Supabase project, or offline guest mode ----
    The page talks to Supabase's REST API directly (auth + PostgREST) — no SDK.
@@ -2087,7 +2152,7 @@ function renderSlots(){
     bSave.addEventListener("click",async()=>{
       if(!root){toast("Nothing to save yet — build something first");return;}
       if(s&&!(await confirmUI(`Overwrite File ${i}?`)))return;
-      const payload={t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),owned:[...owned],ts:Date.now(),parts:countParts(),total:window._bomTotal??null};
+      const payload={t:serialize(root),f:floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir})),owned:[...owned],l:loops,ts:Date.now(),parts:countParts(),total:window._bomTotal??null};
       if(SB.sess){
         try{await saveCloudSlot(i,payload);toast(`Saved to File ${i} in your account`);}
         catch(e){
@@ -2108,7 +2173,7 @@ function renderSlots(){
       if(!cur){toast(`File ${i} is empty`);return;}
       pushUndo();root=build(cur.t);
       floats=(cur.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
-      owned=new Set(cur.owned||[]);
+      owned=new Set(cur.owned||[]);loops=cur.l||[];loopFrom=null;
       selPort=null;selNode=null;snapTarget=null;refresh();fitView();
       closeFiles();toast(`Loaded File ${i} — Undo brings your previous design back`);
     });
@@ -2136,6 +2201,7 @@ function renderSlots(){
       payload.t=serialize(root);
       payload.f=floats.map(fl=>({t:serialize(fl.node),p:fl.pos,d:fl.dir}));
       payload.owned=[...owned];
+      payload.l=loops;
     }
     const slots={};let ns=0;
     for(let i=1;i<=NSLOTS;i++){const sv=readSlot(i);if(sv){slots[i]=sv;ns++;}}
@@ -2170,7 +2236,7 @@ function importModal(){
       if(o.t){
         pushUndo();root=build(o.t);
         floats=(o.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
-        owned=new Set(o.owned||[]);
+        owned=new Set(o.owned||[]);loops=o.l||[];loopFrom=null;
         selPort=null;selNode=null;snapTarget=null;refresh();fitView();
         done.push("design loaded onto the canvas");
       }
@@ -2210,7 +2276,11 @@ $("filespop").addEventListener("click",e=>e.stopPropagation()); // row buttons r
 document.addEventListener("click",e=>{
   if(!$("filespop").hidden&&!e.target.closest(".filewrap"))closeFiles();
 });
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeFiles();});
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Escape")return;
+  closeFiles();
+  if(loopFrom){loopFrom=null;$("hint").innerHTML=HINT_DEFAULT;renderPanels();toast("Loop mode cancelled");}
+});
 $("bom").addEventListener("change",e=>{
   const cb=e.target.closest("input.own");
   if(!cb)return;
@@ -2253,7 +2323,7 @@ const EXAMPLES={
 $("examples").addEventListener("change",e=>{
   const v=e.target.value;e.target.value="";
   if(!v)return;
-  pushUndo();root=build(JSON.parse(JSON.stringify(EXAMPLES[v])));floats=[];owned=new Set();selPort=null;selNode=null;snapTarget=null;
+  pushUndo();root=build(JSON.parse(JSON.stringify(EXAMPLES[v])));floats=[];owned=new Set();loops=[];loopFrom=null;selPort=null;selNode=null;snapTarget=null;
   refresh();fitView();
   toast("Example loaded — orbit around it, then click any orange ball to keep building");
 });
@@ -2267,6 +2337,7 @@ window.PP={
     return {x:r.left+(pr[0]+1)/2*canvas.clientWidth,y:r.top+(1-pr[1])/2*canvas.clientHeight};},
   ser:()=>serialize(root),
   floats:()=>floats.map(f=>({pos:f.pos.slice(),entry:(entrySpecOf(f.node)||{}).t})),
+  loops:()=>loops.length,
   pickAt:(x,y)=>{const h=pick(x,y);return h?{type:h.type,kind:h.node?h.node.kind:(h.port?h.port.spec.t:"entry")}:null;},
   webgl:!!ENG
 };
