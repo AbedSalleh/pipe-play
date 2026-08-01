@@ -199,10 +199,13 @@
     <h2>Pipe Play</h2>
     <p class="store">Who's planning today? Profiles keep each person's save files separate <b>on this device</b> — they are not password-protected online accounts.</p>
     <div id="proflist"></div>
-    <div class="row" style="display:flex;gap:8px;margin:10px 0 8px">
+    <div class="row" style="display:flex;gap:8px;margin:10px 0 6px">
       <input id="newname" maxlength="20" placeholder="New profile name" aria-label="New profile name">
       <button class="btn primary" id="mkprofile">Create</button>
     </div>
+    <input id="newpw" type="password" maxlength="64" placeholder="Password (optional)" aria-label="Password (optional)"
+      style="width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--panel);color:var(--ink);margin-bottom:6px">
+    <p class="psub" style="font-size:11px;color:var(--mut);margin:0 0 10px">A password stops others <b>on this device</b> from opening your profile. It's stored only as a salted hash in this browser and can't be recovered — your designs themselves stay as plain text.</p>
     <button class="btn" id="guest" style="width:100%">Continue as guest</button>
   </div>
 </div>
@@ -1676,6 +1679,35 @@ function profileList(){try{return JSON.parse(localStorage.getItem(PROFKEY))||[];
 function saveProfileList(l){localStorage.setItem(PROFKEY,JSON.stringify(l));}
 function nsPrefix(){return (currentUser&&currentUser!=="__guest")?("pipeplay:"+currentUser+":"):"pipeplay-";}
 function avatarColor(name){let h=0;for(const ch of name)h=(h*31+ch.charCodeAt(0))%360;return `hsl(${h},45%,45%)`;}
+/* password hashing: PBKDF2-SHA256 with a random salt via WebCrypto.
+   Only the salted hash is stored (in this browser); the password itself never is. */
+const buf2hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+const hex2buf=h=>new Uint8Array(h.match(/../g).map(x=>parseInt(x,16)));
+async function hashPw(pw,saltHex,it){
+  const salt=saltHex?hex2buf(saltHex):crypto.getRandomValues(new Uint8Array(16));
+  const iters=it||120000;
+  const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveBits"]);
+  const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt,iterations:iters,hash:"SHA-256"},key,256);
+  return {salt:buf2hex(salt),hash:buf2hex(bits),it:iters};
+}
+function promptPwUI(msg){
+  return new Promise(res=>{
+    const back=document.createElement("div");back.className="modalback";
+    back.innerHTML=`<div class="modal"><p>${msg}</p>
+      <input type="password" autocomplete="off" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:7px 8px;background:var(--panel2);color:var(--ink);margin-bottom:10px">
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" data-x="0">Cancel</button><button class="btn primary" data-x="1">Sign in</button></div></div>`;
+    const inp=back.querySelector("input");
+    const done=v=>{back.remove();res(v);};
+    back.addEventListener("click",e=>{
+      e.stopPropagation();
+      if(e.target===back)return done(null);
+      const b=e.target.closest("button");
+      if(b)done(b.dataset.x==="1"?inp.value:null);
+    });
+    inp.addEventListener("keydown",e=>{if(e.key==="Enter")done(inp.value);if(e.key==="Escape")done(null);});
+    document.body.appendChild(back);inp.focus();
+  });
+}
 function updateUserChip(){
   $("userchip").textContent=currentUser&&currentUser!=="__guest"?("👤 "+currentUser):"👤 Guest";
 }
@@ -1694,7 +1726,7 @@ function renderLogin(){
     const row=document.createElement("div");row.className="profrow";row.tabIndex=0;row.setAttribute("role","button");
     const slots=[1,2,3].filter(i=>localStorage.getItem("pipeplay:"+p.name+":slot-"+i)).length;
     row.innerHTML=`<span class="avatar" style="background:${avatarColor(p.name)}">${p.name.slice(0,2).toUpperCase()}</span>
-      <div class="pmeta"><div class="pname">${p.name}</div><div class="psub">${slots} of 3 save files used</div></div>`;
+      <div class="pmeta"><div class="pname">${p.name}${p.sec?" 🔒":""}</div><div class="psub">${slots} of 3 save files used</div></div>`;
     const del=document.createElement("button");del.className="mini";del.textContent="✕";del.title="Delete profile";
     del.addEventListener("click",async ev=>{
       ev.stopPropagation();
@@ -1704,8 +1736,19 @@ function renderLogin(){
       renderLogin();
     });
     row.appendChild(del);
-    row.addEventListener("click",()=>loginAs(p.name));
-    row.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();loginAs(p.name);}});
+    const tryLogin=async()=>{
+      if(p.sec){
+        const pw=await promptPwUI(`Password for "${p.name}":`);
+        if(pw==null)return;
+        try{
+          const t=await hashPw(pw,p.sec.salt,p.sec.it);
+          if(t.hash!==p.sec.hash){toast("Wrong password");return;}
+        }catch(e){toast("This browser can't verify passwords here (needs a secure page)");return;}
+      }
+      loginAs(p.name);
+    };
+    row.addEventListener("click",tryLogin);
+    row.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();tryLogin();}});
     el.appendChild(row);
   }
 }
@@ -1715,7 +1758,14 @@ $("mkprofile").addEventListener("click",async()=>{
   const name=($("newname").value||"").trim();
   if(!/^[\w\- ]{1,20}$/.test(name)||name==="__guest"){toast("Give the profile a simple name (letters, numbers, spaces)");return;}
   if(profileList().some(p=>p.name.toLowerCase()===name.toLowerCase())){toast("That profile already exists — click it to sign in");return;}
-  saveProfileList(profileList().concat([{name,created:Date.now()}]));
+  const prof={name,created:Date.now()};
+  const pw=$("newpw").value;
+  if(pw){
+    if(!(window.crypto&&crypto.subtle)){toast("Passwords need a secure (https) page — profile not created");return;}
+    prof.sec=await hashPw(pw);
+    $("newpw").value="";
+  }
+  saveProfileList(profileList().concat([prof]));
   // bring the designs already saved in this browser (guest slots) into the new profile
   if(legacySlotsInUse()&&(await confirmUI(`This browser already has saved designs (guest files). Copy them into "${name}"?`))){
     for(let i=1;i<=3;i++){
