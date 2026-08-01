@@ -406,6 +406,7 @@ function exploreChains(A,maxSteps){ // fewest pieces first; among equal-length p
   }
   return [...out.values()];
 }
+const chainStepName=s=>s.type==="stub"?("10 cm "+SYS[s.sys].label.split(" ")[0]+" stub"):s.def.name;
 function bestChainTo(reach,goal){ // goal(spec) -> info object or null
   let best=null;
   for(const r of reach){
@@ -483,6 +484,20 @@ function restore(s){
   floats=(o.f||[]).map(fl=>({node:build(fl.t),pos:fl.p,dir:fl.d}));
 }
 function pushUndo(){ undoStack.push(snapshot()); if(undoStack.length>60) undoStack.shift(); }
+function persistCanvas(){ // the working canvas survives page reloads
+  try{localStorage.setItem("pipeplay-canvas",snapshot());}catch(e){}
+}
+function insertChainSteps(atNode,atKey,steps){ // insert middle pieces, return new attach point
+  let at={node:atNode,key:atKey};
+  for(const stp of steps){
+    let n2;
+    if(stp.type==="stub") n2=mkNode("pipe",{sys:stp.sys,sz:stp.sz},{L:0.1});
+    else { n2=mkNode("fit",stp.def.id,{}); n2.via=stp.via; }
+    attach(at.node,at.key,n2);
+    at={node:n2,key:portsOf(n2)[0].key};
+  }
+  return at;
+}
 function serialize(n){
   if(!n) return null;
   const o={k:n.kind,d:n.data,m:n.meta,v:n.via,c:{}};
@@ -879,6 +894,7 @@ function makeEngine(canvas,opts){
 
 /* ---- main viewport ---- */
 const canvas=$("gl");
+const HINT_DEFAULT=$("hint").innerHTML;
 const ENG=makeEngine(canvas,{});
 const labelsEl=$("labels");
 let cam={yaw:-0.65,pitch:0.42,dist:5,target:[1.2,0,0.2]};
@@ -1039,7 +1055,8 @@ function drawScene(mode){
     const puls=mode?1:(1+0.14*Math.sin(t*3+p.pickId));
     const r=mode?.07:(snap?.085:(sel?.065:.048)*puls); // pick pass: bigger, steady target
     gl.uniformMatrix4fv(ENG.U.model,false,m4ts(p.pos,r));
-    gl.uniform3fv(ENG.U.color,snap?[0.20,0.68,0.38]:(sel?themeColors.ink:themeColors.accent));
+    // green = joins directly; amber = a middle piece will be added on release
+    gl.uniform3fv(ENG.U.color,snap?(snapTarget.steps&&snapTarget.steps.length?[0.91,0.62,0.20]:[0.20,0.68,0.38]):(sel?themeColors.ink:themeColors.accent));
     gl.uniform3fv(ENG.U.pick,encPick(p.pickId));
     gl.drawArrays(gl.TRIANGLES,0,c.dynCount);
   }
@@ -1106,17 +1123,35 @@ function fitView(){
 
 /* ---- camera controls + island dragging ---- */
 let drag=null;
+const dragChainCache={}; // port-spec -> entry-spec chains, computed once per pair
 function updateSnapTarget(fl){
   snapTarget=null;
   const es=entrySpecOf(fl.node);
   if(!es)return;
-  let bd=0.35;
+  let bd=0.4;
   for(const p of lastPorts){
     if(islandOf(p.node)===fl)continue;
-    if(!match(p.spec,es))continue;
     const d=Math.hypot(p.pos[0]-fl.pos[0],p.pos[1]-fl.pos[1],p.pos[2]-fl.pos[2]);
-    if(d<bd){bd=d;snapTarget={node:p.node,key:p.key,spec:p.spec,pos:p.pos};}
+    if(d>=bd)continue;
+    let steps;
+    if(match(p.spec,es))steps=[];
+    else{ // no direct fit: can a short middle chain (stub/adapter) join them?
+      const ck=specKey(p.spec)+">"+specKey(es);
+      if(!(ck in dragChainCache)){
+        const b=bestChainTo(exploreChains(p.spec,2),s=>match(s,es)?{ok:1}:null);
+        dragChainCache[ck]=b?b.steps:null;
+      }
+      steps=dragChainCache[ck];
+      if(!steps)continue;
+    }
+    bd=d;snapTarget={node:p.node,key:p.key,spec:p.spec,pos:p.pos,steps};
   }
+  const h=$("hint");
+  if(snapTarget)
+    h.innerHTML=snapTarget.steps.length
+      ?`Release to join — goes in the middle: <b>${snapTarget.steps.map(chainStepName).join(" + ")}</b>`
+      :`Release to <b>snap together</b>`;
+  else h.innerHTML=HINT_DEFAULT;
 }
 canvas.addEventListener("pointerdown",e=>{
   canvas.setPointerCapture(e.pointerId);
@@ -1181,13 +1216,18 @@ function endDrag(e){
       if(snapTarget){ // snap: the island becomes part of the line again
         const fl=d.fl, tgt=snapTarget;snapTarget=null;
         floats.splice(floats.indexOf(fl),1);
-        attach(tgt.node,tgt.key,fl.node);
-        toast("Snapped together");
+        const at=insertChainSteps(tgt.node,tgt.key,tgt.steps||[]);
+        attach(at.node,at.key,fl.node);
+        toast(tgt.steps&&tgt.steps.length
+          ?"Snapped — added in the middle: "+tgt.steps.map(chainStepName).join(" + ")
+          :"Snapped together");
       }
       snapTarget=null;
+      $("hint").innerHTML=HINT_DEFAULT;
       refresh();
       return;
     }
+    if(d.mode==="island")$("hint").innerHTML=HINT_DEFAULT;
     if(moved<5&&d.mode!=="pan"){
       const hit=d.hit;
       if(!hit){selPort=null;selNode=null;}
@@ -1307,6 +1347,7 @@ function advanceSelection(node){
 }
 function refresh(){
   rebuildScene();
+  persistCanvas();
   if(selPort){ // keep the working end on screen
     const pr=project(selPort.pos);
     if(pr[2]<0.05||Math.abs(pr[0])>0.92||Math.abs(pr[1])>0.92) fitView();
@@ -1465,17 +1506,7 @@ function renderPanels(){
   const chainHTML=steps=>steps.length
     ?`<div class="chain">Goes in the middle: <b>${steps.map(stepName).join(" + ")}</b>${fitPrices(steps)>0?` (adds RM ${fitPrices(steps).toFixed(2)})`:""}</div>`
     :`<div class="chain">Fits directly — no adapter needed</div>`;
-  function insertChain(steps){ // insert middle pieces, return the new attach point
-    let at={node:selPort.node,key:selPort.key};
-    for(const stp of steps){
-      let n2;
-      if(stp.type==="stub") n2=mkNode("pipe",{sys:stp.sys,sz:stp.sz},{L:0.1});
-      else { n2=mkNode("fit",stp.def.id,{}); n2.via=stp.via; }
-      attach(at.node,at.key,n2);
-      at={node:n2,key:portsOf(n2)[0].key};
-    }
-    return at;
-  }
+  const insertChain=steps=>insertChainSteps(selPort.node,selPort.key,steps);
 
   /* pipes */
   const pipeOptions=[];
@@ -2073,6 +2104,10 @@ if(!ENG){
   $("hint").textContent="WebGL is not available in this browser — the 3D canvas cannot start.";
 }
 updateUserChip();
+try{ // the working canvas survives page reloads
+  const s=localStorage.getItem("pipeplay-canvas");
+  if(s)restore(s);
+}catch(e){}
 (async()=>{ // restore the session, or show the login screen
   if(SB.sess&&sbCfg()){
     if(await ensureFreshSession()){
