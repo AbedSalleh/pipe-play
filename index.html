@@ -187,6 +187,7 @@
     <div id="labels"></div>
     <div class="hint" id="hint">Drag to orbit · scroll to zoom · Shift-drag to pan · click an <b>orange ball</b> to attach parts — arrows show which way the line grows</div>
     <div class="zoombar">
+      <button class="btn" id="zflow" aria-label="Show or hide water flow" aria-pressed="true" title="Show/hide water flow">💧</button>
       <button class="btn" id="zlabels" aria-label="Show or hide length labels" aria-pressed="true" title="Show/hide length labels">🏷</button>
       <button class="btn" id="zin" aria-label="Zoom in">+</button>
       <button class="btn" id="zout" aria-label="Zoom out">−</button>
@@ -978,6 +979,8 @@ const labelsEl=$("labels");
 let cam={yaw:-0.65,pitch:0.42,dist:5,target:[1.2,0,0.2]};
 let lastVP=M4I,lastEye=[0,0,5];
 let showLabels=localStorage.getItem("pipeplay-labels")!=="0";
+let showFlow=localStorage.getItem("pipeplay-flow")!=="0";
+let flowSegs=[];
 let pickTable=[null], lastPorts=[], sceneLabels=[], bbox=null;
 let themeColors={bg:[0.93,0.92,0.90],grid:[0.85,0.84,0.81],accent:[0.91,0.38,0.11],ink:[0.13,0.15,0.17]};
 function refreshTheme(){
@@ -1020,6 +1023,17 @@ function rebuildScene(){
     const out={shapes:[],ports:[],labels:[]};
     if(root)layout(root,[0,0,0],root.meta.face??0,out);
     for(const fl of floats)layout(fl.node,fl.pos,fl.dir,out);
+    flowSegs=[];
+    for(const s of out.shapes){
+      if(islandOf(s.n))continue;
+      const rr=s.t==="pipe"?radOf(s.n.data.sz)*1.14:(s.def?radOf(s.def.ports[0].sz)*1.52:0); // slightly proud of the pipe so the slug shows
+      if(s.t==="pipe"||s.t==="inline")flowSegs.push({a:s.a,b:s.b,r:rr});
+      else if(s.t==="elbow"){flowSegs.push({a:s.a,b:s.c,r:rr},{a:s.c,b:s.b,r:rr});}
+      else if(s.t==="corner"){flowSegs.push({a:s.a,b:s.c,r:rr},{a:s.c,b:s.b,r:rr},{a:s.c,b:s.bp,r:rr});}
+      else if(s.t==="tee"){flowSegs.push({a:s.a,b:s.b,r:rr},{a:s.m,b:s.bp,r:rr});}
+    }
+    for(const sg of flowSegs)sg.len=V.len(V.sub(sg.b,sg.a));
+    flowSegs=flowSegs.filter(sg=>sg.len>0.03);
     const nodePick=new Map();
     for(const s of out.shapes){
       let id=nodePick.get(s.n);
@@ -1158,6 +1172,22 @@ function drawScene(mode){
     gl.uniform3fv(ENG.U.color,held?[0.12,0.42,0.78]:[0.18,0.48,0.84]);
     gl.uniform3fv(ENG.U.pick,encPick(fl.pickId||0));
     gl.drawArrays(gl.TRIANGLES,0,c.dynCount);
+  }
+  // flowing water: bright slugs traveling source -> outlets
+  if(showFlow&&!mode&&flowSegs.length){
+    gl.uniform3fv(ENG.U.color,[0.23,0.60,0.92]);
+    gl.uniform3fv(ENG.U.pick,[0,0,0]);
+    const SPEED=0.45; // m/s, visual
+    for(let i=0;i<flowSegs.length;i++){
+      const sg=flowSegs[i];
+      const nn=Math.max(1,Math.round(sg.len/0.28));
+      for(let k=0;k<nn;k++){
+        const ph=(((t*SPEED)/sg.len)+(k/nn)+i*0.137)%1;
+        const px=sg.a[0]+(sg.b[0]-sg.a[0])*ph,py=sg.a[1]+(sg.b[1]-sg.a[1])*ph,pz=sg.a[2]+(sg.b[2]-sg.a[2])*ph;
+        gl.uniformMatrix4fv(ENG.U.model,false,m4ts([px,py,pz],sg.r));
+        gl.drawArrays(gl.TRIANGLES,0,c.dynCount);
+      }
+    }
   }
   // growth-direction arrows on every open connection
   if(arrowCount){
@@ -1357,6 +1387,14 @@ canvas.addEventListener("dblclick",e=>{ // double-click a part to orbit around i
   if(hit&&hit.type==="node"&&hit.node._p0){cam.target=hit.node._p0.slice();toast("Orbiting around this part");}
   else if(hit&&hit.type==="port"){cam.target=hit.port.pos.slice();}
 });
+$("zflow").addEventListener("click",()=>{
+  showFlow=!showFlow;
+  localStorage.setItem("pipeplay-flow",showFlow?"1":"0");
+  $("zflow").setAttribute("aria-pressed",showFlow?"true":"false");
+  $("zflow").style.opacity=showFlow?"":"0.45";
+  toast(showFlow?"Water flow on":"Water flow off");
+});
+if(!showFlow){$("zflow").setAttribute("aria-pressed","false");$("zflow").style.opacity="0.45";}
 $("zlabels").addEventListener("click",()=>{
   showLabels=!showLabels;
   localStorage.setItem("pipeplay-labels",showLabels?"1":"0");
@@ -1829,6 +1867,75 @@ function renderPanels(){
   updateBOM();
 }
 
+/* ================= hydraulics (rough Hazen-Williams estimate) ================= */
+const IDM={pvc:{"12":.016,"34":.021,"1":.027},gi:{"12":.016,"34":.0215,"1":.027},
+  hdpe:{"20":.0154,"25":.0204,"32":.0262},palpe:{"16":.0119,"20":.015},
+  ppr:{"20":.0132,"25":.0166,"32":.0216}};
+const CHW={pvc:150,ppr:150,hdpe:150,palpe:145,gi:120};
+function hwBar(L,Q,D,C){ // friction over L meters at Q m3/s through inner dia D
+  if(Q<=0||L<=0||!D)return 0;
+  return 10.67*L*Math.pow(Q,1.852)/(Math.pow(C,1.852)*Math.pow(D,4.87))*0.0981;
+}
+function isLoopJoined(n,key){
+  return loops.some(lp=>{
+    const pn=resolvePath(lp.p),bn=resolvePath(lp.bp);
+    return (pn===n&&key===0)||(bn===n&&key===lp.bk);
+  });
+}
+function pressureReport(){
+  if(!root)return null;
+  const srcBar=root.meta.srcBar??2.0, lpm=root.meta.flowLpm??15;
+  const qOut=lpm/60000, z0=(root._p0||[0,0,0])[2];
+  const results=[];
+  function outlets(n){ // simultaneous-flow assumption: every tap/open end draws
+    let c=0;
+    if(n.kind==="fit"&&n.data.startsWith&&n.data.startsWith("tap"))c+=1;
+    for(const ex of (n._exits||[])){
+      const ch=n.children[ex.key];
+      if(ch)c+=outlets(ch);
+      else if(!isLoopJoined(n,ex.key))c+=1;
+    }
+    n._q=c*qOut;
+    return c;
+  }
+  outlets(root);
+  function elemLoss(n){
+    const q=n._q||0;
+    if(q<=0)return 0;
+    if(n.kind==="pipe")
+      return hwBar(n.meta.L,q,(IDM[n.data.sys]||{})[n.data.sz],CHW[n.data.sys]||140);
+    if(n.kind!=="fit")return 0;
+    const d=DEFBY[n.data];
+    if(d.id.startsWith("wf-"))return 0.2; // typical clean-filter drop
+    const sz=d.ports[0].sz, sys=(IDM[d.sys]?d.sys:"gi");
+    const D=(IDM[sys]||{})[sz]||0.016, C=CHW[sys]||140;
+    if(d.id==="flex-12")return hwBar(0.3,q,0.010,130);
+    let ratio=2; // sockets, unions, adapters: near-negligible
+    if(d.geo==="elbow"||d.geo==="corner")ratio=30;
+    else if(d.geo==="tee")ratio=40;
+    else if(d.id.includes("valve"))ratio=(d.id.includes("gi-valve")||d.id.includes("hd-valve"))?8:3;
+    return hwBar(ratio*D,q,D,C);
+  }
+  function walk(n,acc){
+    acc+=elemLoss(n);
+    if(n.kind==="fit"&&n.data.startsWith("tap"))
+      results.push({name:DEFBY[n.data].name,z:(n._p0||[0,0,0])[2],loss:acc});
+    for(const ex of (n._exits||[])){
+      const ch=n.children[ex.key];
+      if(ch)walk(ch,acc);
+      else if(!isLoopJoined(n,ex.key)&&!(n.kind==="fit"&&DEFBY[n.data].geo==="end"))
+        results.push({name:"Open end — "+specLabel(ex.spec),z:ex.pos[2],loss:acc});
+    }
+  }
+  walk(root,0);
+  for(const r of results){
+    r.bar=srcBar-0.0981*(r.z-z0)-r.loss;
+    r.psi=r.bar*14.504;
+  }
+  results.sort((a,b)=>a.bar-b.bar);
+  return {srcBar,lpm,results};
+}
+
 /* ================= BOM ================= */
 function collect(){
   const pipes={},fits={},joints={};
@@ -1883,6 +1990,31 @@ function updateBOM(){
   el.insertAdjacentHTML("beforeend",`<table class="bom">${rows}</table>
     ${saved>0?`<div class="jsum" style="display:flex;justify-content:space-between"><span>Already have (excluded)</span><span style="font-family:var(--mono)">−RM ${saved.toFixed(2)}</span></div>`:""}
     <div class="total"><span>Estimated total to buy</span><span>RM ${total.toFixed(2)}</span></div>`);
+  const pr=pressureReport();
+  if(pr&&pr.results.length){
+    let prows="";
+    for(const r of pr.results){
+      const col=r.bar<=0.3?"var(--warn)":(r.bar<1?"#B07A1E":"var(--ok)");
+      const txt=r.bar<=0?"no flow":r.bar.toFixed(2)+" bar / "+r.psi.toFixed(1)+" psi";
+      prows+=`<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:2px 0">
+        <span>${r.name}${Math.abs(r.z)>0.05?` <span style="color:var(--mut)">@ ${r.z>0?"+":""}${(Math.round(r.z*100)/100)} m</span>`:""}</span>
+        <span style="font-family:var(--mono);white-space:nowrap;color:${col}">${txt}</span></div>`;
+    }
+    el.insertAdjacentHTML("beforeend",`
+      <div class="grouph" style="margin-top:12px">Water pressure at each outlet (rough)</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;margin-bottom:6px">
+        <label>Supply <input id="srcbar" class="len" type="number" min="0.2" max="10" step="0.1" value="${pr.srcBar}"> bar</label>
+        <label>Per outlet <input id="flowlpm" class="len" type="number" min="2" max="60" step="1" value="${pr.lpm}"> L/min</label>
+      </div>
+      ${prows}
+      <div class="disclaimer">All outlets assumed flowing at once. Counts friction in every pipe and fitting (Hazen-Williams), the filter's drop, and height gained — a rough guide, not an engineering calc.</div>`);
+    const hook=id=>{const inp=el.querySelector("#"+id);if(inp)inp.addEventListener("change",()=>{
+      root.meta.srcBar=Math.max(.2,Math.min(10,parseFloat(el.querySelector("#srcbar").value)||2));
+      root.meta.flowLpm=Math.max(2,Math.min(60,parseFloat(el.querySelector("#flowlpm").value)||15));
+      persistCanvas();updateBOM();
+    });};
+    hook("srcbar");hook("flowlpm");
+  }
   const js=Object.entries(joints).map(([m,n])=>`${n} × ${METHODS[m].name.toLowerCase()}`).join(" · ");
   if(js)el.insertAdjacentHTML("beforeend",`<div class="jsum">Joints to make: ${js}</div>`);
   if(joints["compression"]||joints["brass-compression"])
@@ -2364,6 +2496,8 @@ window.PP={
   ser:()=>serialize(root),
   floats:()=>floats.map(f=>({pos:f.pos.slice(),entry:(entrySpecOf(f.node)||{}).t})),
   loops:()=>loops.length,
+  pressure:()=>pressureReport(),
+  flowSegs:()=>flowSegs.length,
   pickAt:(x,y)=>{const h=pick(x,y);return h?{type:h.type,kind:h.node?h.node.kind:(h.port?h.port.spec.t:"entry")}:null;},
   webgl:!!ENG
 };
